@@ -1,0 +1,6 @@
+# dsh-closeout-button：把「收尾」做成一个按钮（客户端插件）。
+#
+# insert 行的 id / name **必须等于包名**，否则静默装载不上（见 dsh-kb-sync 的 INSTALL-PATH 教训）。
+- insert:
+    - id: dsh-closeout-button
+      name: 'dsh-closeout-button'

@@ -124,7 +124,31 @@ test('同源 Origin（与 Host 一致）放行', async () => {
   }
 })
 
-test('cwd 不存在 → 400（不把任意路径塞给 spawn）', async () => {
+test('传 sessionId 时把它带给 CLI（--session + --cwd-from-session）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'closeout-host-'))
+  const stub = join(dir, 'stub.mjs')
+  // stub 把收到的 argv 原样吐回来，用来断言宿主确实转发了会话 id
+  writeFileSync(stub, 'process.stdout.write(JSON.stringify({verdict:"safe",argv:process.argv.slice(2)}))\n')
+  const prev = process.env.DSH_CLOSEOUT_BIN
+  process.env.DSH_CLOSEOUT_BIN = stub
+  const sid = 'session-11111111-2222-3333-4444-555555555555'
+  try {
+    const handler = loadHandler()
+    const res = fakeRes()
+    await handler(fakeReq({ body: { sessionId: sid } }), res)
+    assert.equal(res.out.status, 200, `实际：${JSON.stringify(res.out.payload)}`)
+    const argv = res.out.payload.value.argv
+    assert.ok(argv.includes('--session'), `argv 里应有 --session：${JSON.stringify(argv)}`)
+    assert.ok(argv.includes(sid), `argv 里应有会话 id：${JSON.stringify(argv)}`)
+    assert.ok(argv.includes('--cwd-from-session'), '必须带 --cwd-from-session，否则查的仍是宿主自己的目录')
+  } finally {
+    if (prev === undefined) delete process.env.DSH_CLOSEOUT_BIN
+    else process.env.DSH_CLOSEOUT_BIN = prev
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('cwd 不存在且没有 sessionId → 400（不把任意路径塞给 spawn）', async () => {
   const handler = loadHandler()
   const res = fakeRes()
   await handler(fakeReq({ body: { cwd: join(tmpdir(), 'definitely-not-here-xyz') } }), res)

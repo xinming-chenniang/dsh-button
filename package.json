@@ -1,6 +1,6 @@
 {
   "name": "dsh-closeout-button",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "One-click composer actions: send 「继续」, send 「收尾」, send 「按建议执行」, resend your last message, and a closeout panel that shows whether you can close the session.",
   "type": "module",
@@ -47,6 +47,7 @@
     "ui"
   ]
 }
+
 
 
 

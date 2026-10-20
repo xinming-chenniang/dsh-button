@@ -148,6 +148,17 @@ test('继续：点击＝把「继续」填进当前会话并提交', async () =>
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
+test('收口面板：渲染不抛错（ctx 必须由 makePanel 传进去，不能在 apply 外裸引用）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  plugin.apply(ctx)
+  // 这条在 v0.3.1 会直接抛 ReferenceError: ctx is not defined（组件定义在 apply 之外）
+  const btn = buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-panel-action')
+  assert.equal(btn.type, 'button')
+  assert.equal(btn.props.disabled, false, '面板按钮在不检查时应可点')
+  assert.equal(btn.props.onClick instanceof Function, true)
+})
+
 test('收尾：点击＝把「收尾」填进当前会话并提交', async () => {
   const plugin = await loadPlugin()
   const calls = []

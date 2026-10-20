@@ -1,19 +1,52 @@
-# dsh-closeout-button —— 输入框那一排的四个动作
+# dsh-closeout-button —— 输入框那一排的五个动作
 
 > **出处**：2026-10-19 本机 DSH 会话建的客户端插件（用户要求"别每次手打收尾"）；
-> 2026-10-20 用户要求把「重发上一条」也并进来；同日再把「按建议执行」并进来 ——
-> **一个插件、三个按钮**（收尾 / 按建议执行 / 重发上一条）。
-> **是什么**：DSH 的 Web 端插件。① 点「收尾」把「收尾」两个字填进当前会话并提交；
+> 2026-10-20 用户要求把「重发上一条」也并进来；同日再把「按建议执行」并进来；
+> 同日（晚）再加「继续」—— 用户原话："大多数时候都要说继续、按推荐执行、接受，能不能整成一个按钮，
+> 相当于下一步" —— **一个插件、四个按钮 + 一块收口面板**
+> （继续 / 收尾 / 按建议执行 / 重发上一条）。
+> **是什么**：DSH 的 Web 端插件。⓪ 点「继续」把「继续」两个字填进当前会话并提交 ——
+> 这是"没异议、往下走"的**通用答复**（继续 / 按推荐执行 / 接受 / 好的 / 行，都点它，不用再挑词）；
+> ① 点「收尾」把「收尾」两个字填进当前会话并提交；
 > ② 点「按建议执行」把「按建议执行」填进当前会话并提交（让 agent 照自己刚给的建议直接动手）；
 > ③ 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
-> **状态**：**可用（2026-10-20 装机验证：桌面端启动成功、web boot 无失败项）** ——
-> 离线冒烟测试 9 例全过；三个格子在实时插槽树里都已 `active`（见「落点」）。
-> **处置**：保留（`D:\dsh\dsh-closeout-button\`，工作区根下的插件源码副本，无 `.git`）。
+> **状态**：**可用（2026-10-20 装机验证：桌面端启动成功、web boot 无失败项；同日 v0.4 加「继续」，离线 10 例全过）** ——
+> 离线冒烟测试 10 例全过；五个格子在实时插槽树里都是 `active`（见「落点」）。
+> **处置**：保留（`D:\dsh\dsh-closeout-button\`，工作区根下的插件源码，**git 仓库**：
+> 2026-10-20 复核，`.git` 存在、历史 2 条以上；desktop profile 以 `link:D:/dsh/dsh-closeout-button` 指向它）。
 > **关联**：`D:\dsh\tools\sessions-closeout.mjs`（收尾按钮触发的那条命令）· `D:\dsh\AGENTS.md`「会话收尾」。
+
+## v0.4：多了「继续」
+
+一句话需求：*"大多数时候都要说：继续、按推荐执行、接受——能不能整成一个按钮，
+相当于下一步，没异议的时候就不用打字。"*
+
+可行，而且**只是一个"替你打两个字"的按钮** —— 与「收尾」「按建议执行」共用同一段代码
+（`makeTriggerAction`），差别只有文案与发出去的词：
+
+```text
+点「继续」 → composer.setDraft('继续') → composer.submit()
+```
+
+为什么是「继续」而不是「好的」/「接受」/「行」：agent 收到的都是同一件事
+（"我同意，别问了，往下做"），但「继续」是这批词里**最没有歧义**的一个 ——
+"接受""好的"在审批语境里才自然，"继续"在"接着写下去"与"按你说的做"两种语境都成立。
+要换词只改 `lib/client.js` 的 `TRIGGER_CONTINUE` 一个常量。
+
+三个"同意类"说法怎么分工（不用记，点错了也不会出事）：
+
+| 你想说的 | 点哪个 | 实际发出去 |
+| --- | --- | --- |
+| 没异议，往下走 / 好的 / 接受 / 行 | 「继续」 | `继续` |
+| 我认可你刚给的那套建议，照它做 | 「按建议执行」 | `按建议执行` |
+| 这轮聊完了，收摊 | 「收尾」 | `收尾` |
+
+> 前两个的区别只是**语气**：`继续` 更短、更通用；`按建议执行` 明确锁定"刚给的建议"，
+> 适合 agent 给了 2-3 个方案、你不想它再列一遍的时候。两个都留着的成本只是多一个格子。
 
 ## v0.3：多了「收口面板」
 
-前三个按钮都只是"替你打字"。第四个不一样：**点一下让宿主跑一次 `closeout`，把判断显示出来。**
+前四个按钮都只是"替你打字"。第五个不一样：**点一下让宿主跑一次 `closeout`，把判断显示出来。**
 
 ```text
 点「收口」 → POST /api/dsh-closeout/check（宿主路由）
@@ -32,12 +65,13 @@
 ## 它做了什么
 
 ```
+点「继续」        → 取当前会话 → composer.setDraft('继续')       → composer.submit()
 点「收尾」        → 取当前会话 → composer.setDraft('收尾')       → composer.submit()
 点「按建议执行」  → 取当前会话 → composer.setDraft('按建议执行') → composer.submit()
 点「重发上一条」  → 取最后一条真人用户消息的文本 → composer.setDraft(文本) → composer.submit()
 ```
 
-三个按钮都只是"替你打一段字并提交"，其余行为与手打完全一样。用的全是宿主**公开服务**：
+这些按钮都只是"替你打一段字并提交"，其余行为与手打完全一样。用的全是宿主**公开服务**：
 
 | 步骤 | API | 出处（装机插件/宿主包里的实测用法） |
 |---|---|---|
@@ -47,18 +81,22 @@
 | 真人消息判据 | `event.type === 'user/message'` 且 `event.data.source.kind === 'user'` | `dsh-better-sidebar` 的 `isContextInjectionMessage` |
 | 填并提交 | `ctx.get('conversation').input.for(scope).setDraft(text)` + `.submit()` | `@anionex/dsh-turn-rewind`、`dsh-better-sidebar` |
 
-## 落点（两个插槽、四个格子）
+## 落点（两个插槽、五个格子）
 
 `lib/client.js` 顶部：
 
 ```js
-const SLOT_CLOSEOUT = 'conversation.input.left'    // 收尾：输入框左侧工具区，order 5
-const SLOT_SUGGEST  = 'conversation.input.left'    // 按建议执行：同一个插槽，order 6（收尾右边一格）
-const SLOT_RESEND   = 'conversation.input.right'   // 重发：主发送/暂停键左侧那一排，order 5
+const SLOT_CONTINUE = 'conversation.input.left'   // 继续：输入框左侧工具区，order 4（最左）
+const SLOT_CLOSEOUT = 'conversation.input.left'   // 收尾：同一个插槽，order 5
+const SLOT_SUGGEST  = 'conversation.input.left'   // 按建议执行：同一个插槽，order 6（收尾右边一格）
+const SLOT_PANEL    = 'conversation.input.left'   // 收口面板：同一个插槽，order 7
+const SLOT_RESEND   = 'conversation.input.right'  // 重发：主发送/暂停键左侧那一排，order 5
 ```
 
-同一个 `list` 插槽里放两个按钮 = **两个格子**，所以第二个必须用自己的 id：
-`dsh-closeout-button`（收尾）与 `dsh-closeout-button:suggest`（按建议执行）。复用别人的 id 会顶掉那个格子
+同一个 `list` 插槽里放多个按钮 = **多个格子**，所以每个都必须用自己的 id：
+`dsh-closeout-button:continue`（继续）、`dsh-closeout-button`（收尾）、
+`dsh-closeout-button:suggest`（按建议执行）、`dsh-closeout-button:panel`（面板）。
+复用别人的 id 会顶掉那个格子
 （宿主插槽目录的原话：*reusing a shipped id puts you in THAT cell and replaces it*）。
 实测两种写法的差别就是"两个按钮"还是"一个按钮"—— `test/client.test.mjs` 里有专门断言。
 
@@ -67,7 +105,7 @@ activity、主键同处输入框右下，列表顺序由 `order` 决定。
 
 | 想放哪 | 改成 | 是否已被装机插件验证 |
 |---|---|---|
-| 输入框左侧（收尾 + 按建议执行默认） | `conversation.input.left` | ✅ 宿主 `composer bar` 的 list 插槽 |
+| 输入框左侧（继续 + 收尾 + 按建议执行 + 面板默认） | `conversation.input.left` | ✅ 宿主 `composer bar` 的 list 插槽 |
 | 发送/暂停键旁（重发默认） | `conversation.input.right` | ✅ 同上；紧邻主键 |
 | 左侧栏底部 | `sidebar.footer.action` | ✅ `dsh-plugin-restart` / `dsh-session-manager` |
 | 会话标题栏右侧 | `conversation.session.header.actions` | ✅ `dsh-turn-rewind` / `dsh-session-manager` |
@@ -87,7 +125,7 @@ activity、主键同处输入框右下，列表顺序由 `order` 决定。
 ## 自检
 
 ```powershell
-node --test D:\dsh\dsh-closeout-button\test\client.test.mjs   # 9 例：四个格子 / 收尾 / 按建议执行 / 重发 / 注入过滤 / 禁用态 / 老宿主
+node --test D:\dsh\dsh-closeout-button\test\client.test.mjs   # 10 例：五个格子 / 继续 / 收尾 / 按建议执行 / 重发 / 注入过滤 / 禁用态 / 老宿主
 node --test D:\dsh\dsh-closeout-button\test\host.test.mjs     # 7 例：路由（loopback / 同源 / 405 / 400 / 502 / stub 跑通）
 node --check D:\dsh\dsh-closeout-button\lib\client.js
 node --check D:\dsh\dsh-closeout-button\lib\index.js
@@ -101,6 +139,8 @@ node --check D:\dsh\dsh-closeout-button\lib\index.js
 - **面板没有自动化 E2E**：路由层有 7 个用例（含 stub 跑通整条链路），但"按钮和面板是否出现在界面上"
   只能重启应用后人眼看。
 
+- **「继续」文案固定**：发出去的就是这两个字（`TRIGGER_CONTINUE`），全角、不带标点 —— 与手打完全等价；
+  它就是"继续 / 按推荐执行 / 接受 / 好的"这一族说法的**统一出口**，改词只改那一个常量。
 - **「收尾」文案固定**：与 `D:\dsh\AGENTS.md`「会话收尾」的触发词一致；要改就改 `TRIGGER` 常量。
 - **「按建议执行」文案固定**：发出去的就是这五个字（`TRIGGER_SUGGEST`），全角、不带标点、不带换行 ——
   与手打完全等价；改文案只改那个常量，别改别的。

@@ -19,6 +19,7 @@ const CLIENT = join(HERE, '..', 'lib', 'client.js')
 const PKG = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8'))
 
 const SLOT_CLOSEOUT = 'conversation.input.left'
+const SLOT_CONTINUE = 'conversation.input.left'
 const SLOT_SUGGEST = 'conversation.input.left'
 const SLOT_RESEND = 'conversation.input.right'
 
@@ -116,7 +117,7 @@ function buttonAt(ctx, slot, className) {
   assert.fail(`${slot} 里找不到 ${className} 按钮`)
 }
 
-test('插件对象形状：名字、注入面、四个按钮分别注册到两个插槽', async () => {
+test('插件对象形状：名字、注入面、五个按钮分别注册到两个插槽', async () => {
   const plugin = await loadPlugin()
   assert.equal(plugin.name, PKG.name)
   assert.ok(plugin.inject.includes('slots'), 'inject 必须含 slots')
@@ -124,14 +125,27 @@ test('插件对象形状：名字、注入面、四个按钮分别注册到两�
 
   const ctx = makeCtx()
   plugin.apply(ctx)
-  assert.equal(ctx.registrations.length, 4, '应当注册四个按钮（收尾 + 按建议执行 + 收口面板 + 重发）')
+  assert.equal(ctx.registrations.length, 5, '应当注册五个按钮（继续 + 收尾 + 按建议执行 + 收口面板 + 重发）')
   const left = ctx.registrations.filter((item) => item.options.name === SLOT_CLOSEOUT)
-  assert.equal(left.length, 3, '输入框左侧应当有三个动作：收尾 + 按建议执行 + 收口面板')
-  assert.deepEqual(left.map((item) => item.options.order), [5, 6, 7], '按建议执行在收尾右边，面板再往右')
+  assert.equal(left.length, 4, '输入框左侧应当有四个动作：继续 + 收尾 + 按建议执行 + 收口面板')
+  assert.deepEqual(left.map((item) => item.options.order), [4, 5, 6, 7], '继续最左，收尾其次，按建议执行再往右，面板最后')
   const leftIds = left.map((item) => item.options.id)
-  assert.equal(new Set(leftIds).size, 3, `同一个插槽里的格子键必须互不相同（复用 id = 顶掉别人的格子）：${JSON.stringify(leftIds)}`)
+  assert.equal(new Set(leftIds).size, 4, `同一个插槽里的格子键必须互不相同（复用 id = 顶掉别人的格子）：${JSON.stringify(leftIds)}`)
   assert.equal(ctx.registrations.find((item) => item.options.name === SLOT_RESEND)?.options.id, PKG.name)
-  assert.equal(left[0].options.id, PKG.name)
+  assert.equal(left[1].options.id, PKG.name, '收尾那一格用包名当键')
+  assert.equal(left[0].options.id, `${PKG.name}:continue`, '继续那一格必须用自己的键')
+})
+
+test('继续：点击＝把「继续」填进当前会话并提交', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  plugin.apply(ctx)
+
+  const button = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
+  assert.equal(button.props.disabled, false, '有当前会话时继续可用')
+  button.props.onClick()
+  assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
 test('收尾：点击＝把「收尾」填进当前会话并提交', async () => {
@@ -205,32 +219,36 @@ test('重发兼容裸字符串 content', async () => {
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '裸文本消息'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
-test('没有打开的会话：三个按钮都禁用，点击不提交', async () => {
+test('没有打开的会话：所有按钮都禁用，点击不提交', async () => {
   const plugin = await loadPlugin()
   const calls = []
   const ctx = makeCtx({ calls, byId: {} })
   plugin.apply(ctx)
 
+  const cont = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
   const closeout = buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-action')
   const suggest = buttonAt(ctx, SLOT_SUGGEST, 'dsh-suggest-action')
   const resend = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
+  assert.equal(cont.props.disabled, true)
   assert.equal(closeout.props.disabled, true)
   assert.equal(suggest.props.disabled, true)
   assert.equal(resend.props.disabled, true)
 
+  cont.props.onClick()
   closeout.props.onClick()
   suggest.props.onClick()
   resend.props.onClick()
   assert.deepEqual(calls, [], '禁用状态下不应提交任何东西')
 })
 
-test('只有注入消息、没有真人消息：重发禁用，收尾与按建议执行仍可用', async () => {
+test('只有注入消息、没有真人消息：重发禁用，继续/收尾/按建议执行仍可用', async () => {
   const plugin = await loadPlugin()
   const calls = []
   const ctx = makeCtx({ calls, entries: [userMessage(3, '注入内容', 'agent-instructions')] })
   plugin.apply(ctx)
 
   assert.equal(buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action').props.disabled, true)
+  assert.equal(buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.disabled, false)
   assert.equal(buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-action').props.disabled, false)
   assert.equal(buttonAt(ctx, SLOT_SUGGEST, 'dsh-suggest-action').props.disabled, false)
 })

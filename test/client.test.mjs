@@ -18,15 +18,14 @@ const CLIENT = join(HERE, '..', 'lib', 'client.js')
 /** 包名是这些 id 的唯一来源：改名时断言跟着它走，源码漏改就 FAIL。 */
 const PKG = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8'))
 
-const SLOT_CLOSEOUT = 'conversation.input.left'
 const SLOT_CONTINUE = 'conversation.input.left'
-const SLOT_SUGGEST = 'conversation.input.left'
+const SLOT_CUSTOM = 'conversation.input.left'
 const SLOT_RESEND = 'conversation.input.right'
 
-/** 最小的 React 替身：createElement 记形状，useState 取初值，Component 只当基类。 */
+/** 最小的 React 替身：createElement 记形状，useState 取初值（支持惰性初始化函数）。 */
 const fakeReact = {
   createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
-  useState: (init) => [init, () => {}],
+  useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
   Fragment: Symbol('Fragment'),
   Component: class Component {
     constructor(props) { this.props = props }
@@ -83,8 +82,13 @@ function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, e
     slots: {
       inject: (_name, fn) => fn(),
       register: (options, component) => {
-        ctx.registrations.push({ options, component })
-        return () => {}
+        const entry = { options, component }
+        ctx.registrations.push(entry)
+        // 真实 slots 的 disposer 会移除这个格子；删预设靠它。
+        return () => {
+          const at = ctx.registrations.indexOf(entry)
+          if (at >= 0) ctx.registrations.splice(at, 1)
+        }
       },
     },
     registrations: [],
@@ -117,7 +121,7 @@ function buttonAt(ctx, slot, className) {
   assert.fail(`${slot} 里找不到 ${className} 按钮`)
 }
 
-test('插件对象形状：名字、注入面、五个按钮分别注册到两个插槽', async () => {
+test('插件对象形状：名字、注入面、三格分别注册到两个插槽', async () => {
   const plugin = await loadPlugin()
   assert.equal(plugin.name, PKG.name)
   assert.ok(plugin.inject.includes('slots'), 'inject 必须含 slots')
@@ -125,15 +129,17 @@ test('插件对象形状：名字、注入面、五个按钮分别注册到两�
 
   const ctx = makeCtx()
   plugin.apply(ctx)
-  assert.equal(ctx.registrations.length, 5, '应当注册五个按钮（继续 + 收尾 + 按建议执行 + 收口面板 + 重发）')
-  const left = ctx.registrations.filter((item) => item.options.name === SLOT_CLOSEOUT)
-  assert.equal(left.length, 4, '输入框左侧应当有四个动作：继续 + 收尾 + 按建议执行 + 收口面板')
-  assert.deepEqual(left.map((item) => item.options.order), [4, 5, 6, 7], '继续最左，收尾其次，按建议执行再往右，面板最后')
+  assert.equal(ctx.registrations.length, 3, '应当注册三格（继续 + 自定义 + 重发）')
+  const left = ctx.registrations.filter((item) => item.options.name === SLOT_CUSTOM)
+  assert.equal(left.length, 2, '输入框左侧应当有两个动作：继续 + 自定义')
+  assert.deepEqual(left.map((item) => item.options.order), [4, 5], '继续最左，自定义其次')
   const leftIds = left.map((item) => item.options.id)
-  assert.equal(new Set(leftIds).size, 4, `同一个插槽里的格子键必须互不相同（复用 id = 顶掉别人的格子）：${JSON.stringify(leftIds)}`)
+  assert.equal(new Set(leftIds).size, 2, `同一个插槽里的格子键必须互不相同（复用 id = 顶掉别人的格子）：${JSON.stringify(leftIds)}`)
   assert.equal(ctx.registrations.find((item) => item.options.name === SLOT_RESEND)?.options.id, PKG.name)
-  assert.equal(left[1].options.id, PKG.name, '收尾那一格用包名当键')
   assert.equal(left[0].options.id, `${PKG.name}:continue`, '继续那一格必须用自己的键')
+  assert.equal(left[1].options.id, `${PKG.name}:custom`, '自定义按钮那一格必须用自己的键')
+  assert.ok(!left.some((item) => item.options.id === `${PKG.name}:suggest`), '按建议执行已合并，不应再有它')
+  assert.ok(!left.some((item) => item.options.id === `${PKG.name}:panel`), '收口已删除，不应再有面板格子')
 })
 
 test('继续：点击＝把「继续」填进当前会话并提交', async () => {
@@ -146,41 +152,6 @@ test('继续：点击＝把「继续」填进当前会话并提交', async () =>
   assert.equal(button.props.disabled, false, '有当前会话时继续可用')
   button.props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
-})
-
-test('收口面板：渲染不抛错（ctx 必须由 makePanel 传进去，不能在 apply 外裸引用）', async () => {
-  const plugin = await loadPlugin()
-  const ctx = makeCtx()
-  plugin.apply(ctx)
-  // 这条在 v0.3.1 会直接抛 ReferenceError: ctx is not defined（组件定义在 apply 之外）
-  const btn = buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-panel-action')
-  assert.equal(btn.type, 'button')
-  assert.equal(btn.props.disabled, false, '面板按钮在不检查时应可点')
-  assert.equal(btn.props.onClick instanceof Function, true)
-})
-
-test('收尾：点击＝把「收尾」填进当前会话并提交', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({ calls })
-  plugin.apply(ctx)
-
-  const button = buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-action')
-  assert.equal(button.props.disabled, false, '有当前会话时收尾可用')
-  button.props.onClick()
-  assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '收尾'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
-})
-
-test('按建议执行：点击＝把「按建议执行」填进当前会话并提交', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({ calls })
-  plugin.apply(ctx)
-
-  const button = buttonAt(ctx, SLOT_SUGGEST, 'dsh-suggest-action')
-  assert.equal(button.props.disabled, false, '有当前会话时按建议执行可用')
-  button.props.onClick()
-  assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '按建议执行'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
 test('重发上一条：取最后一条真人消息的文本，覆盖草稿并提交', async () => {
@@ -230,29 +201,24 @@ test('重发兼容裸字符串 content', async () => {
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '裸文本消息'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
-test('没有打开的会话：所有按钮都禁用，点击不提交', async () => {
+test('没有打开的会话：动作按钮都禁用，点击不提交；「＋」入口仍可用', async () => {
   const plugin = await loadPlugin()
   const calls = []
   const ctx = makeCtx({ calls, byId: {} })
   plugin.apply(ctx)
 
   const cont = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
-  const closeout = buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-action')
-  const suggest = buttonAt(ctx, SLOT_SUGGEST, 'dsh-suggest-action')
   const resend = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
   assert.equal(cont.props.disabled, true)
-  assert.equal(closeout.props.disabled, true)
-  assert.equal(suggest.props.disabled, true)
   assert.equal(resend.props.disabled, true)
+  assert.notEqual(buttonAt(ctx, SLOT_CUSTOM, 'dsh-custom-manage').props.disabled, true, '编辑入口不依赖会话')
 
   cont.props.onClick()
-  closeout.props.onClick()
-  suggest.props.onClick()
   resend.props.onClick()
   assert.deepEqual(calls, [], '禁用状态下不应提交任何东西')
 })
 
-test('只有注入消息、没有真人消息：重发禁用，继续/收尾/按建议执行仍可用', async () => {
+test('只有注入消息、没有真人消息：重发禁用，继续仍可用', async () => {
   const plugin = await loadPlugin()
   const calls = []
   const ctx = makeCtx({ calls, entries: [userMessage(3, '注入内容', 'agent-instructions')] })
@@ -260,8 +226,6 @@ test('只有注入消息、没有真人消息：重发禁用，继续/收尾/按
 
   assert.equal(buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action').props.disabled, true)
   assert.equal(buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.disabled, false)
-  assert.equal(buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-action').props.disabled, false)
-  assert.equal(buttonAt(ctx, SLOT_SUGGEST, 'dsh-suggest-action').props.disabled, false)
 })
 
 test('老宿主留下的 state.current 仍然优先（两份取值路径都要活）', async () => {
@@ -276,6 +240,107 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
   })
   plugin.apply(ctx)
 
-  buttonAt(ctx, SLOT_CLOSEOUT, 'dsh-closeout-action').props.onClick()
-  assert.deepEqual(calls, [['for', 'session-a'], ['setDraft', '收尾'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
+  buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.onClick()
+  assert.deepEqual(calls, [['for', 'session-a'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
+})
+
+test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、上限与长度校验）', async () => {
+  const plugin = await loadPlugin()
+  const { blankCustomRow, validateCustomRows, MAX_CUSTOM } = plugin.__internals
+  assert.deepEqual(blankCustomRow(), { label: '', text: '' })
+  // 空行直接跳过，不要求用户自己删干净
+  assert.deepEqual(validateCustomRows([
+    { label: ' 收尾 ', text: ' 收尾 ' },
+    blankCustomRow(),
+  ]), {
+    ok: true,
+    buttons: [{ label: '收尾', text: '收尾' }],
+  })
+  // 只填一半才报错，并指明第几条
+  const labelOnly = validateCustomRows([{ label: '只有标签', text: '' }])
+  assert.equal(labelOnly.ok, false)
+  assert.match(labelOnly.message, /第 1 条/)
+  assert.match(labelOnly.message, /文字/)
+  assert.equal(validateCustomRows([{ label: '', text: '只有文字' }]).ok, false)
+  // 上限与长度
+  const tooMany = Array.from({ length: MAX_CUSTOM + 1 }, (_, i) => ({ label: `b${i}`, text: 'x' }))
+  assert.equal(validateCustomRows(tooMany).ok, false)
+  assert.equal(validateCustomRows([{ label: 'a'.repeat(30), text: 'x' }]).ok, false)
+  assert.equal(validateCustomRows([{ label: 'a', text: 'x'.repeat(600) }]).ok, false)
+  // 不带 "=" 的标签也合法（旧的行格式要求已取消）
+  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x' }] })
+})
+
+test("删掉的预设真的从插槽移除（hidden=['continue']）", async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [], hidden: ['continue'] }),
+  })
+  try {
+    plugin.apply(ctx)
+    // apply 先全注册（2 预设 + 自定义 = 3）；配置到达后按 hidden 注销。
+    assert.equal(ctx.registrations.length, 3)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(ctx.registrations.length, 2, `实际：${JSON.stringify(ctx.registrations.map((r) => r.options.id))}`)
+    assert.ok(!ctx.registrations.some((item) => item.options.id === `${PKG.name}:continue`), '继续那一格应被移除')
+    assert.ok(ctx.registrations.some((item) => item.options.id === PKG.name), '重发仍应在')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('自定义按钮：读到配置后渲染成按钮，点击发配置里的文字；「＋」入口常驻', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '知识库', text: '用 knowledge-base 查我的体检' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
+    assert.ok(registration, '应当注册一格自定义按钮')
+    // 先真正执行一次组件（发起配置请求），等它落地后再渲染一次：
+    // 真实 React 里由 setState 驱动重渲染，这里手动重跑。
+    registration.component().children[0].type()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const seat = registration.component()
+    const inner = seat.children[0].type
+    const tree = inner()
+    const button = findByClass(tree, 'dsh-custom-action')
+    assert.ok(button, '应当渲染配置里的自定义按钮')
+    assert.equal(button.children[0], '知识库')
+    assert.equal(button.props.title, '用 knowledge-base 查我的体检')
+    button.props.onClick()
+    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '用 knowledge-base 查我的体检'], ['submit']])
+    assert.ok(findByClass(tree, 'dsh-custom-manage'), '「＋」入口应当常驻')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('自定义按钮：配置为空时只渲染「＋」入口，不渲染任何动作按钮', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, buttons: [] }) })
+  try {
+    plugin.apply(ctx)
+    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
+    const seat = registration.component()
+    const inner = seat.children[0].type
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const tree = inner()
+    assert.equal(findByClass(tree, 'dsh-custom-action'), null)
+    assert.ok(findByClass(tree, 'dsh-custom-manage'))
+  } finally {
+    globalThis.fetch = prevFetch
+  }
 })

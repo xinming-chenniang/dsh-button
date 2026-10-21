@@ -1,4 +1,4 @@
-# dsh-button：输入框那一排的动作（独立客户端插件；收尾面板可选依赖 dsh-closeout）。
+# dsh-button：输入框那一排的动作（独立客户端插件；自定义按钮配置由宿主半部读写）。
 #
 # insert 行的 id / name **必须等于包名**，否则静默装载不上（见 dsh-kb-sync 的 INSTALL-PATH 教训）。
 - insert:

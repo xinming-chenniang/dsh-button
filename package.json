@@ -1,8 +1,8 @@
 {
   "name": "dsh-button",
-  "version": "0.5.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "One-click composer actions: send 「继续」, send 「收尾」, send 「按建议执行」, resend your last message, and a closeout panel that shows whether you can close the session.",
+  "description": "One-click composer actions: send 「继续」, send your own configurable buttons (any text, e.g. to invoke a skill), resend your last message, and hide/restore either preset button. Text-only: no host commands.",
   "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",

@@ -45,7 +45,15 @@
     "closeout",
     "session",
     "ui"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xinming-chenniang/dsh-button.git"
+  },
+  "homepage": "https://github.com/xinming-chenniang/dsh-button#readme",
+  "bugs": {
+    "url": "https://github.com/xinming-chenniang/dsh-button/issues"
+  }
 }
 
 

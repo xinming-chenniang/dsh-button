@@ -3,8 +3,10 @@
 > **职责（2026-10-21）**：只做「输入框按钮」。**收尾自检在 `dsh-closeout`**（CLI + skill，无 UI）；
 > 本插件的「收口」面板 spawn `dsh-closeout`，未安装时降级为提示，不影响其它四个按钮。
 > `dsh-open-at-last-input` 是另一个界面插件（会话落点），与本包不合并。
-> **改名**：2026-10-21 由 `dsh-closeout-button` 改为 `dsh-button`；目录改名与 profile 更新见
-> `PHASE2-PLAN.md` 3.2（需重启应用）。
+> **改名**：2026-10-21 由 `dsh-closeout-button` 改为 `dsh-button`；同日把**目录、profile
+> （`dependencies` + `bundles`）、`node_modules` junction** 一并改成新名 —— 可复跑的执行/回滚脚本见
+> `D:\dsh\tmp\20261021-dsh-button改名\rename.ps1`，计划依据见
+> `D:\dsh\20261020-收尾流程发行版\PHASE2-PLAN.md` 3.2。**重启应用**才装载新名。
 
 > **出处**：2026-10-19 本机 DSH 会话建的客户端插件（用户要求"别每次手打收尾"）；
 > 2026-10-20 用户要求把「重发上一条」也并进来；同日再把「按建议执行」并进来；
@@ -18,8 +20,8 @@
 > ③ 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
 > **状态**：**可用（2026-10-20 装机验证：桌面端启动成功、web boot 无失败项；同日 v0.4 加「继续」，离线 10 例全过）** ——
 > 离线冒烟测试 10 例全过；五个格子在实时插槽树里都是 `active`（见「落点」）。
-> **处置**：保留（`D:\dsh\dsh-closeout-button\`，工作区根下的插件源码，**git 仓库**：
-> 2026-10-20 复核，`.git` 存在、历史 2 条以上；desktop profile 以 `link:D:/dsh/dsh-closeout-button` 指向它）。
+> **处置**：保留（`D:\dsh\dsh-button\`，工作区根下的插件源码，**git 仓库**：`.git` 随目录改名一起搬，
+> 历史可回滚；desktop profile 以 `link:D:/dsh/dsh-button` 指向它）。
 > **关联**：`D:\dsh\tools\sessions-closeout.mjs`（收尾按钮触发的那条命令）· `D:\dsh\AGENTS.md`「会话收尾」。
 
 ## v0.4：多了「继续」
@@ -100,8 +102,8 @@ const SLOT_RESEND   = 'conversation.input.right'  // 重发：主发送/暂停�
 ```
 
 同一个 `list` 插槽里放多个按钮 = **多个格子**，所以每个都必须用自己的 id：
-`dsh-closeout-button:continue`（继续）、`dsh-closeout-button`（收尾）、
-`dsh-closeout-button:suggest`（按建议执行）、`dsh-closeout-button:panel`（面板）。
+`dsh-button:continue`（继续）、`dsh-button`（收尾）、
+`dsh-button:suggest`（按建议执行）、`dsh-button:panel`（面板）。
 复用别人的 id 会顶掉那个格子
 （宿主插槽目录的原话：*reusing a shipped id puts you in THAT cell and replaces it*）。
 实测两种写法的差别就是"两个按钮"还是"一个按钮"—— `test/client.test.mjs` 里有专门断言。
@@ -122,7 +124,7 @@ activity、主键同处输入框右下，列表顺序由 `order` 决定。
 
 > CLI `dsh plugin --profile desktop add …` 会被拒绝：`profile "desktop" is managed exclusively by the Electron application`（实测）。
 
-1. **设置 → 插件**（插件经理）→「安装」→ 选择**本地目录** `D:\dsh\dsh-closeout-button`；
+1. **设置 → 插件**（插件经理）→「安装」→ 选择**本地目录** `D:\dsh\dsh-button`；
 2. 安装后**重启应用**（客户端插件是启动时快照的）；
 3. 信任确认（`dsh-trust-check` 能力披露）：本插件只有 `slots`/`locale` 两处注入，
    不读写文件、不出网、不碰凭据 —— 披露应该很干净；
@@ -131,10 +133,10 @@ activity、主键同处输入框右下，列表顺序由 `order` 决定。
 ## 自检
 
 ```powershell
-node --test D:\dsh\dsh-closeout-button\test\client.test.mjs   # 10 例：五个格子 / 继续 / 收尾 / 按建议执行 / 重发 / 注入过滤 / 禁用态 / 老宿主
-node --test D:\dsh\dsh-closeout-button\test\host.test.mjs     # 7 例：路由（loopback / 同源 / 405 / 400 / 502 / stub 跑通）
-node --check D:\dsh\dsh-closeout-button\lib\client.js
-node --check D:\dsh\dsh-closeout-button\lib\index.js
+node --test D:\dsh\dsh-button\test\client.test.mjs   # 10 例：五个格子 / 继续 / 收尾 / 按建议执行 / 重发 / 注入过滤 / 禁用态 / 老宿主
+node --test D:\dsh\dsh-button\test\host.test.mjs     # 7 例：路由（loopback / 同源 / 405 / 400 / 502 / stub 跑通）
+node --check D:\dsh\dsh-button\lib\client.js
+node --check D:\dsh\dsh-button\lib\index.js
 ```
 
 ## 已知边界

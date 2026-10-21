@@ -182,3 +182,6 @@ node --check D:\dsh\dsh-button\lib\index.js
 - **改完客户端源码要完全退出应用再启动**，不要依赖热重载；半途重载会留下旧注册，
   需要一次干净启动才清得掉。
 
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

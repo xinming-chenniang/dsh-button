@@ -1,8 +1,8 @@
 {
   "name": "dsh-button",
   "version": "1.2.0",
-  "private": true,
-  "description": "One-click composer actions: send 「继续」 (label and text editable), send your own configurable buttons (any text, e.g. to invoke a skill), resend your last message (label editable), and hide/restore either preset button. Text-only: no host commands.",
+  "private": false,
+  "description": "One-click composer actions for DeepSeek Harness: a 「继续」 button (label and text editable), your own configurable text buttons (e.g. to invoke a skill), a 「重发上一条」 button (label editable, content is your last real message), plus hide/restore and five sensible default actions. Text-only: no host commands.",
   "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",
@@ -10,6 +10,9 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dsh": {
     "engines": {
@@ -44,8 +47,10 @@
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
-    "closeout",
-    "session",
+    "composer",
+    "buttons",
+    "quick-actions",
+    "prompt",
     "ui"
   ],
   "repository": {

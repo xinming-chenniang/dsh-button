@@ -171,16 +171,36 @@ activity、主键同处输入框右下，列表顺序由 `order` 决定。
 
 改完要**重装/重启**（客户端模块是启动时快照）。
 
-## 安装（GUI，因为 desktop profile 由应用独占管理）
+## 安装
 
-> CLI `dsh plugin --profile desktop add …` 会被拒绝：`profile "desktop" is managed exclusively by the Electron application`（实测）。
+### npm（web profile）
 
-1. **设置 → 插件**（插件经理）→「安装」→ 选择**本地目录** `D:\dsh\dsh-button`；
-2. 安装后**重启应用**（客户端插件是启动时快照的）；
-3. 信任确认（`dsh-trust-check` 能力披露）：客户端注入 `slots`/`locale`；宿主半部注入 `webServer`
-   并**读写自定义按钮的配置文件**（`$DSH_HOME/dsh-button/buttons.json`，可用 `DSH_BUTTON_CONFIG` 改路径）。
-   不碰凭据、不出外网；除该配置文件外不写任何文件；
-4. 卸载：插件经理里 remove，再重启。
+```sh
+dsh plugin --profile web add dsh-button
+```
+
+装完**重启**（客户端插件是启动时快照）。
+
+### GitHub 源
+
+```sh
+dsh plugin --profile web add github:xinming-chenniang/dsh-button
+```
+
+### 桌面端
+
+桌面 profile 由应用独占管理，CLI 会被拒绝：`profile "desktop" is managed exclusively by the Electron application`（实测）。
+用 **设置 → 插件 → 添加插件**，输入 `dsh-button`（或 GitHub 仓库地址），安装后重启应用。
+
+### 本地源码
+
+**设置 → 插件**（插件经理）→「安装」→ 选择**本地目录**（本机是 `D:\dsh\dsh-button`），或用 `link:` 安装后重启。
+
+### 信任披露
+
+客户端注入 `slots` / `locale`；宿主半部注入 `webServer`，并**读写一个配置文件**
+（`$DSH_HOME/dsh-button/buttons.json`，可用 `DSH_BUTTON_CONFIG` 改路径）。
+不碰凭据、不出外网；除该配置文件外不写任何文件。卸载：插件经理里 remove，再重启。
 
 ## 自检
 

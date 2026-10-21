@@ -3,6 +3,7 @@
   "version": "0.5.0",
   "private": true,
   "description": "One-click composer actions: send 「继续」, send 「收尾」, send 「按建议执行」, resend your last message, and a closeout panel that shows whether you can close the session.",
+  "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -36,7 +37,8 @@
   "files": [
     "lib",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "dsh",

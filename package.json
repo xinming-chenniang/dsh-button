@@ -1,8 +1,8 @@
 {
   "name": "dsh-button",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "One-click composer actions: send 「继续」, send your own configurable buttons (any text, e.g. to invoke a skill), resend your last message, and hide/restore either preset button. Text-only: no host commands.",
+  "description": "One-click composer actions: send 「继续」 (label and text editable), send your own configurable buttons (any text, e.g. to invoke a skill), resend your last message (label editable), and hide/restore either preset button. Text-only: no host commands.",
   "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",

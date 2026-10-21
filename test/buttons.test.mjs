@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../lib/index.js'
-import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, MAX_BUTTONS, PRESET_IDS, DEFAULT_BUTTONS } from '../lib/buttons.js'
+import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, validatePresets, MAX_BUTTONS, PRESET_IDS, DEFAULT_BUTTONS, DEFAULT_PRESETS } from '../lib/buttons.js'
 
 const ROUTE = '/api/dsh-button/buttons'
 
@@ -77,21 +77,24 @@ function buttonsHandler() {
   return captured.handler
 }
 
-test('validateConfig：接受数组与 {buttons}，去掉首尾空白，hidden 默认空', () => {
+test('validateConfig：接受数组与 {buttons}，去掉首尾空白，hidden 默认空、presets 用默认值', () => {
   assert.deepEqual(validateConfig([{ label: ' 收尾 ', text: ' 收尾 ' }]), {
     ok: true,
     buttons: [{ label: '收尾', text: '收尾' }],
     hidden: [],
+    presets: DEFAULT_PRESETS,
   })
   assert.deepEqual(validateConfig({ buttons: [{ label: '知识库', text: '用 knowledge-base 查一下' }] }), {
     ok: true,
     buttons: [{ label: '知识库', text: '用 knowledge-base 查一下' }],
     hidden: [],
+    presets: DEFAULT_PRESETS,
   })
   assert.deepEqual(validateConfig({ buttons: [], hidden: ['continue', 'resend'] }), {
     ok: true,
     buttons: [],
     hidden: ['continue', 'resend'],
+    presets: DEFAULT_PRESETS,
   })
 })
 
@@ -108,7 +111,19 @@ test('validateConfig：拒绝超限、空字段与换行标签；允许 "=" 与�
     ok: true,
     buttons: [{ label: 'a=b', text: '第一行\n第二行' }],
     hidden: [],
+    presets: DEFAULT_PRESETS,
   })
+})
+
+test('validatePresets：缺省补默认值；自定义标签/文字有效；超长或换行报错', () => {
+  assert.deepEqual(validatePresets(undefined), { ok: true, presets: DEFAULT_PRESETS })
+  assert.deepEqual(validatePresets({ continue: { label: ' 继续吧 ', text: ' 继续吧 ' }, resend: { label: ' 再来一次 ' } }), {
+    ok: true,
+    presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } },
+  })
+  assert.equal(validatePresets({ continue: { label: 'a'.repeat(30) } }).ok, false)
+  assert.equal(validatePresets({ resend: { label: 'a\nb' } }).ok, false)
+  assert.equal(validatePresets({ continue: { text: 'a\nb' } }).ok, false)
 })
 
 test('validateHidden：只允许已知预设、去重；未知值报错', () => {
@@ -136,7 +151,7 @@ test('loadConfig：文件不存在 → 自带默认按钮；坏 JSON → 明确�
 
 test('loadConfig：文件存在但按钮为空 → 不回退到默认按钮（用户清空是明确意图）', async () => {
   await withConfigFile(({ file }) => {
-    saveConfig([], [], file)
+    saveConfig([], [], DEFAULT_PRESETS, file)
     const loaded = loadConfig(file)
     assert.equal(loaded.exists, true)
     assert.deepEqual(loaded.buttons, [])
@@ -146,7 +161,7 @@ test('loadConfig：文件存在但按钮为空 → 不回退到默认按钮（�
 test('saveConfig：自动建目录、原子写，读回来是同一份（含 hidden）', async () => {
   await withConfigFile(({ dir, file }) => {
     const nested = join(dir, 'nested', 'buttons.json')
-    const saved = saveConfig([{ label: '收尾', text: '收尾' }], ['resend'], nested)
+    const saved = saveConfig([{ label: '收尾', text: '收尾' }], ['resend'], DEFAULT_PRESETS, nested)
     assert.equal(saved.ok, true, saved.message)
     const loaded = loadConfig(nested)
     assert.equal(loaded.ok, true)
@@ -156,9 +171,9 @@ test('saveConfig：自动建目录、原子写，读回来是同一份（含 hid
   })
 })
 
-test('GET 路由：返回当前配置、hidden 与路径', async () => {
+test('GET 路由：返回当前配置、hidden、presets 与路径', async () => {
   await withConfigFile(async ({ file }) => {
-    saveConfig([{ label: '知识库', text: '用 knowledge-base 查' }], ['continue'], file)
+    saveConfig([{ label: '知识库', text: '用 knowledge-base 查' }], ['continue'], DEFAULT_PRESETS, file)
     const handler = buttonsHandler()
     const res = fakeRes()
     await handler(fakeReq({ method: 'GET' }), res)
@@ -166,6 +181,7 @@ test('GET 路由：返回当前配置、hidden 与路径', async () => {
     assert.equal(res.out.payload.ok, true)
     assert.deepEqual(res.out.payload.buttons, [{ label: '知识库', text: '用 knowledge-base 查' }])
     assert.deepEqual(res.out.payload.hidden, ['continue'])
+    assert.deepEqual(res.out.payload.presets, DEFAULT_PRESETS)
     assert.equal(res.out.payload.defaults, false, '已有配置文件时不应再标记为默认')
     assert.equal(res.out.payload.path, file)
   })
@@ -183,23 +199,39 @@ test('GET 路由：首次安装（无配置文件）返回默认按钮并标记 
   })
 })
 
-test('POST 路由：保存合法配置（含 hidden）并落盘', async () => {
+test('POST 路由：保存合法配置（含 hidden 与 presets）并落盘', async () => {
   await withConfigFile(async ({ file }) => {
     const handler = buttonsHandler()
     const res = fakeRes()
-    await handler(fakeReq({ method: 'POST', body: { buttons: [{ label: '收尾', text: '收尾' }], hidden: ['resend'] } }), res)
+    await handler(
+      fakeReq({
+        method: 'POST',
+        body: {
+          buttons: [{ label: '收尾', text: '收尾' }],
+          hidden: ['resend'],
+          presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } },
+        },
+      }),
+      res,
+    )
     assert.equal(res.out.status, 200)
     assert.deepEqual(res.out.payload.buttons, [{ label: '收尾', text: '收尾' }])
     assert.deepEqual(res.out.payload.hidden, ['resend'])
+    assert.deepEqual(res.out.payload.presets, {
+      continue: { label: '继续吧', text: '继续吧' },
+      resend: { label: '再来一次' },
+    })
     const saved = JSON.parse(readFileSync(file, 'utf8'))
     assert.deepEqual(saved.buttons, [{ label: '收尾', text: '收尾' }])
     assert.deepEqual(saved.hidden, ['resend'])
+    assert.deepEqual(saved.presets.continue, { label: '继续吧', text: '继续吧' })
+    assert.deepEqual(saved.presets.resend, { label: '再来一次' })
   })
 })
 
 test('POST 路由：非法配置 → 400，且不覆盖旧文件（含非法 hidden）', async () => {
   await withConfigFile(async ({ file }) => {
-    saveConfig([{ label: '旧', text: '旧' }], [], file)
+    saveConfig([{ label: '旧', text: '旧' }], [], DEFAULT_PRESETS, file)
     const handler = buttonsHandler()
 
     const badButton = fakeRes()
@@ -236,3 +268,4 @@ test('configPath：DSH_BUTTON_CONFIG 优先于 DSH_HOME', () => {
   assert.equal(configPath({ DSH_BUTTON_CONFIG: 'C:/tmp/x.json' }), 'C:\\tmp\\x.json')
   assert.equal(configPath({ DSH_HOME: 'D:/home/.dsh' }), join('D:/home/.dsh', 'dsh-button', 'buttons.json'))
 })
+

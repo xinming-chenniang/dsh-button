@@ -344,3 +344,51 @@ test('自定义按钮：配置为空时只渲染「＋」入口，不渲染任�
     globalThis.fetch = prevFetch
   }
 })
+
+test('预设草稿：默认值、可改标签与文字、长度/换行校验', async () => {
+  const plugin = await loadPlugin()
+  const { clonePresets, validatePresetDraft } = plugin.__internals
+  assert.deepEqual(clonePresets(undefined), {
+    continue: { label: '继续', text: '继续' },
+    resend: { label: '重发上一条' },
+  })
+  assert.deepEqual(validatePresetDraft({ continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } }), {
+    ok: true,
+    presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } },
+  })
+  assert.equal(validatePresetDraft({ continue: { label: '', text: 'x' } }).ok, false)
+  assert.equal(validatePresetDraft({ continue: { label: 'a', text: '' } }).ok, false)
+  assert.equal(validatePresetDraft({ resend: { label: 'a'.repeat(30) } }).ok, false)
+  assert.equal(validatePresetDraft({ resend: { label: 'a\nb' } }).ok, false)
+})
+
+test('预设读取配置：继续的标签与发送文字都来自配置（remount 后生效）', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [],
+      hidden: [],
+      presets: { continue: { label: '继续吧', text: '继续吧' } },
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:continue`)
+    assert.ok(registration, '继续应当仍在插槽里（hidden 为空）')
+    const seat = registration.component()
+    const inner = seat.children[0].type
+    const button = findByClass(inner(), 'dsh-continue-action')
+    assert.equal(button.children[0], '继续吧', '按钮文字应来自配置的 preset.continue.label')
+    button.props.onClick()
+    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续吧'], ['submit']])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})

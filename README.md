@@ -2,13 +2,32 @@
 
 ![输入框旁的按钮：继续 / 自定义 / 重发上一条](assets/composer-buttons.png)
 
+## 快速开始
+
+点输入框旁的三类按钮：
+
+| 按钮 | 作用 |
+|---|---|
+| 继续 | 发送「继续」（标签和文字都能在编辑器里改） |
+| 自定义 | 发送你配置的「标签 + 文字」 |
+| 重发上一条 | 把最后一条本人消息原样再发一次 |
+
+安装（桌面端）：**设置 → 插件 → 添加插件**，输入 `dsh-button`，装完**重启 DSH**。
+
+CLI：`dsh plugin --profile <profile> add dsh-button`（把 `<profile>` 换成实际 profile 名）；
+GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-button`。
+
+> ⚠️ 点按钮会**覆盖输入框里已有的草稿并立即发送**；「重发上一条」会再提交一次最后一条本人消息。
+> 配置在 `$DSH_HOME/dsh-button/buttons.json`；卸载见文末「卸载」。
+
+## 背景与变更史（内部记录）
+
 > **职责（2026-10-22）**：只做「输入框按钮」。**收尾自检在 `dsh-closeout`**（CLI + skill，无 UI），
 > 本插件不调用它 —— 想一键触发就配一条自定义按钮。
 > `dsh-open-at-last-input` 是另一个界面插件（会话落点），与本包不合并。
 > **改名**：2026-10-21 由 `dsh-closeout-button` 改为 `dsh-button`；同日把**目录、profile
-> （`dependencies` + `bundles`）、`node_modules` junction** 一并改成新名 —— 可复跑的执行/回滚脚本见
-> `D:\dsh\tmp\20261021-dsh-button改名\rename.ps1`，计划依据见
-> `D:\dsh\20261020-收尾流程发行版\PHASE2-PLAN.md` 3.2。**重启应用**才装载新名。
+> （`dependencies` + `bundles`）、`node_modules` junction** 一并改成新名 —— 改名执行与回滚脚本、
+> 计划依据留在本机记录（不进包）。**重启应用**才装载新名。
 > **2026-10-22 v0.6**：**取消写死的「收尾」按钮**，换成**自定义按钮**（标签 + 任意文字，可一键调用
 > skill / 命令 / 常用提示）；配置在宿主侧 JSON，点「＋」在浮层里编辑。需要「收尾」就加一条
 > `收尾 = 收尾`。
@@ -35,10 +54,10 @@
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
 > **状态**：**可用（2026-10-22 v1.2：离线 27 例全过；宿主配置读写与路由有独立用例）**。
-> **处置**：保留（`D:\dsh\plugins\dsh-button\`，插件源码统一根下的目录，**git 仓库**：`.git` 随目录移动，
-> 历史可回滚；desktop profile 以 `link:D:/dsh/plugins/dsh-button` 指向它）。
-> **关联**：`D:\dsh\tools\sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
-> `D:\dsh\AGENTS.md`「会话收尾」。
+> **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
+> desktop profile 以 `link:` 指向它）。
+> **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
+> 本机工作区规则「会话收尾」。
 
 ## v0.4：多了「继续」
 
@@ -196,7 +215,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 
 ### 本地源码
 
-**设置 → 插件**（插件经理）→「安装」→ 选择**本地目录**（本机是 `D:\dsh\plugins\dsh-button`），或用 `link:` 安装后重启。
+**设置 → 插件**（插件经理）→「安装」→ 选择**本机 clone 下来的 `dsh-button` 目录**，或用 `link:` 安装后重启。
 
 ### 信任披露
 
@@ -241,7 +260,7 @@ node --check lib/buttons.js
 - **「继续」文案固定**：发出去的就是这两个字（`TRIGGER_CONTINUE`），全角、不带标点 —— 与手打完全等价；
   它就是"继续 / 按推荐执行 / 接受 / 好的"这一族说法的**统一出口**，改词只改那一个常量。
 - **「收尾」不再是固定按钮**（v0.6 取消）：需要就配一条 `收尾 = 收尾` 的自定义按钮；触发词仍与
-  `D:\dsh\AGENTS.md`「会话收尾」一致。
+  `本机工作区「会话收尾」规则` 一致。
 - **「按建议执行」不再是固定按钮**（v1.0 并入「继续」）：需要精确语义时配一条
   `按建议执行 = 按建议执行`；`TRIGGER_SUGGEST` 常量已删除。
 - **它不替你判断"该不该收尾"**：只是把文字发出去，收尾流程里该跑的体检/报告由会话按约定做。

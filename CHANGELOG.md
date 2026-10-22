@@ -2,6 +2,14 @@
 
 > 按版本记录"改了什么、为什么、怎么验证的"。更早的逐版记录在 README 顶部；这里从对外发布版本开始。
 
+## 1.2.2 — 2026-10-22
+
+- fix: `locale` 从 `inject` 移除；缺 locale 服务的 profile 不再整插件 pending，文案回落中文。
+- fix: 配置请求加 3s 超时；路由挂住时「＋」不会永远 pending。
+- docs: README 首屏补「快速开始 / 安装 / 草稿覆盖警告」；内部记录下沉并去掉本机绝对路径。
+- CI: `checkout` / `setup-node` 升到 v7。
+- 验证：`npm test` 27/27；`npm pack` 9 文件（含截图）。
+
 ## 1.2.1 — 2026-10-22
 
 - 文档/发布物料：输入框按钮截图 `assets/composer-buttons.png` 随包发布；补 GitHub Actions、CHANGELOG、卸载段、兼容性表。

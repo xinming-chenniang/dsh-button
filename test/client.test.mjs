@@ -126,6 +126,7 @@ test('插件对象形状：名字、注入面、三格分别注册到两个插�
   assert.equal(plugin.name, PKG.name)
   assert.ok(plugin.inject.includes('slots'), 'inject 必须含 slots')
   assert.ok(!plugin.inject.includes('conversation'), 'conversation 应当按需取，不进 inject（少一个 pending 风险）')
+  assert.ok(!plugin.inject.includes('locale'), 'locale 可选，不进 inject；缺 locale 时回落中文')
 
   const ctx = makeCtx()
   plugin.apply(ctx)

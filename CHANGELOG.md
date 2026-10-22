@@ -2,6 +2,14 @@
 
 > 按版本记录"改了什么、为什么、怎么验证的"。更早的逐版记录在 README 顶部；这里从对外发布版本开始。
 
+## 1.2.3 — 2026-10-23
+
+- fix：输入框有草稿时按钮不再整段覆盖；返回 `draft-present`，提示「有草稿，未发送」。
+- fix：点击反馈按忙态说真话：忙「已排队 · 本轮结束后发送」、闲「已发送」、未知「已提交」；停留 2.4s。
+- docs：明确**按钮恒为排队**，手打 Enter 才受 `busyEnter` 设置影响；删掉“与手打完全等价”的承诺。
+- 未做：跟随 `busyEnter` 的行为对齐（二期；先验证 `configForms` 的 inject 语义与 `steeringAvailable`）。
+- 验证：`npm test` 29/29；`npm pack` 9 文件。
+
 ## 1.2.2 — 2026-10-22
 
 - fix: `locale` 从 `inject` 移除；缺 locale 服务的 profile 不再整插件 pending，文案回落中文。

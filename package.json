@@ -1,6 +1,6 @@
 {
   "name": "dsh-button",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": false,
   "description": "One-click composer actions for DeepSeek Harness: a 「继续」 button (label and text editable), your own configurable text buttons (e.g. to invoke a skill), a 「重发上一条」 button (label editable, content is your last real message), plus hide/restore and five sensible default actions. Text-only: no host commands.",
   "license": "MIT",

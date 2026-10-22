@@ -56,18 +56,22 @@ function userMessage(seq, content, sourceKind = 'user') {
  * 假 ctx：只实现这个插件用到的表面。
  * `entries` 是会话事件窗口（`binding.eventSource.getSnapshot().entries`）。
  */
-function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [] } = {}) {
+function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false } = {}) {
   const services = {
     sessions: {
       list: { getSnapshot: () => ({ ids: Object.keys(byId), byId }) },
       scope: (id) => ({ id }),
-      binding: () => ({ eventSource: { getSnapshot: () => ({ revision: 1, entries, hasMore: false }) } }),
+      binding: () => ({
+        eventSource: { getSnapshot: () => ({ revision: 1, entries, hasMore: false }) },
+        session: { getSnapshot: () => ({ running }) },
+      }),
     },
     conversation: {
       input: {
         for: (scope) => {
           calls.push(['for', scope.id])
           return {
+            draftSnapshot: { text: draft },
             setDraft: (text) => calls.push(['setDraft', text]),
             submit: () => calls.push(['submit']),
           }
@@ -153,6 +157,25 @@ test('继续：点击＝把「继续」填进当前会话并提交', async () =>
   assert.equal(button.props.disabled, false, '有当前会话时继续可用')
   button.props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
+})
+
+test('有草稿时按钮不覆盖、不提交', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '我正在写的草稿' })
+  plugin.apply(ctx)
+
+  buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.onClick()
+  assert.deepEqual(calls, [['for', 'session-test']], `有草稿时只应读取 input，不应 setDraft/submit：${JSON.stringify(calls)}`)
+})
+
+test('sendText 报告忙态，供「已排队」提示使用', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ running: true })
+  const result = plugin.__internals.sendText(ctx, '继续')
+  assert.equal(result.ok, true)
+  assert.equal(result.submitted, true)
+  assert.equal(result.running, true)
 })
 
 test('重发上一条：取最后一条真人消息的文本，覆盖草稿并提交', async () => {

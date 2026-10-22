@@ -2,6 +2,10 @@
 
 ![输入框旁的按钮：继续 / 自定义 / 重发上一条](assets/composer-buttons.png)
 
+> **English** — One-click composer actions for DeepSeek Harness: **Continue**, custom text buttons,
+> and **Resend last message**. Text-only: it types and submits text, runs no host commands, and
+> never overwrites an existing draft.
+
 ## 快速开始
 
 点输入框旁的三类按钮：

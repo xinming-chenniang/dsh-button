@@ -1,5 +1,7 @@
 # dsh-button —— 输入框那一排的动作（独立插件）
 
+![输入框旁的按钮：继续 / 自定义 / 重发上一条](assets/composer-buttons.png)
+
 > **职责（2026-10-22）**：只做「输入框按钮」。**收尾自检在 `dsh-closeout`**（CLI + skill，无 UI），
 > 本插件不调用它 —— 想一键触发就配一条自定义按钮。
 > `dsh-open-at-last-input` 是另一个界面插件（会话落点），与本包不合并。

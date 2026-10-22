@@ -54,7 +54,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > 这是"没异议、往下走"的**通用答复**（继续 / 按推荐执行 / 接受 / 好的 / 行，都点它，不用再挑词）；
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
-> **状态**：**可用（2026-10-22 v1.2：离线 27 例全过；宿主配置读写与路由有独立用例）**。
+> **状态**：**可用（2026-10-23 v1.2.3：离线 29 例全过；宿主配置读写与路由有独立用例）**。
 > **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
 > desktop profile 以 `link:` 指向它）。
 > **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
@@ -245,7 +245,7 @@ node --check lib/buttons.js
 
 | DSH 版本 | 结果 |
 |---|---|
-| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 27/27 |
+| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 29/29 |
 | 其他版本 | 未测；`package.json` 只声明 `engines.dsh >= 0.2.0-rc.2` |
 
 ## 已知边界

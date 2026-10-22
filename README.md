@@ -33,8 +33,8 @@
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
 > **状态**：**可用（2026-10-22 v1.2：离线 27 例全过；宿主配置读写与路由有独立用例）**。
-> **处置**：保留（`D:\dsh\dsh-button\`，工作区根下的插件源码，**git 仓库**：`.git` 随目录改名一起搬，
-> 历史可回滚；desktop profile 以 `link:D:/dsh/dsh-button` 指向它）。
+> **处置**：保留（`D:\dsh\plugins\dsh-button\`，插件源码统一根下的目录，**git 仓库**：`.git` 随目录移动，
+> 历史可回滚；desktop profile 以 `link:D:/dsh/plugins/dsh-button` 指向它）。
 > **关联**：`D:\dsh\tools\sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
 > `D:\dsh\AGENTS.md`「会话收尾」。
 
@@ -194,7 +194,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 
 ### 本地源码
 
-**设置 → 插件**（插件经理）→「安装」→ 选择**本地目录**（本机是 `D:\dsh\dsh-button`），或用 `link:` 安装后重启。
+**设置 → 插件**（插件经理）→「安装」→ 选择**本地目录**（本机是 `D:\dsh\plugins\dsh-button`），或用 `link:` 安装后重启。
 
 ### 信任披露
 
@@ -205,11 +205,11 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 ## 自检
 
 ```powershell
-node --test D:\dsh\dsh-button\test\client.test.mjs   # 15 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态
-node --test D:\dsh\dsh-button\test\buttons.test.mjs  # 12 例：默认按钮 / 配置与 hidden / presets 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
-node --check D:\dsh\dsh-button\lib\client.js
-node --check D:\dsh\dsh-button\lib\index.js
-node --check D:\dsh\dsh-button\lib\buttons.js
+node --test test/client.test.mjs   # 15 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态
+node --test test/buttons.test.mjs  # 12 例：默认按钮 / 配置与 hidden / presets 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
+node --check lib/client.js
+node --check lib/index.js
+node --check lib/buttons.js
 ```
 
 ## 已知边界

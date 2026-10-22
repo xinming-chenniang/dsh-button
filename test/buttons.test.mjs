@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { apply } from '../lib/index.js'
 import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, validatePresets, MAX_BUTTONS, PRESET_IDS, DEFAULT_BUTTONS, DEFAULT_PRESETS } from '../lib/buttons.js'
 
@@ -265,7 +265,8 @@ test('路由的安全边界：非 loopback 403 / 跨源 403 / 其它方法 405',
 })
 
 test('configPath：DSH_BUTTON_CONFIG 优先于 DSH_HOME', () => {
-  assert.equal(configPath({ DSH_BUTTON_CONFIG: 'C:/tmp/x.json' }), 'C:\\tmp\\x.json')
+  const custom = process.platform === 'win32' ? 'C:/tmp/x.json' : '/tmp/x.json'
+  assert.equal(configPath({ DSH_BUTTON_CONFIG: custom }), resolve(custom))
   assert.equal(configPath({ DSH_HOME: 'D:/home/.dsh' }), join('D:/home/.dsh', 'dsh-button', 'buttons.json'))
 })
 

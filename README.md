@@ -200,7 +200,13 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 
 客户端注入 `slots` / `locale`；宿主半部注入 `webServer`，并**读写一个配置文件**
 （`$DSH_HOME/dsh-button/buttons.json`，可用 `DSH_BUTTON_CONFIG` 改路径）。
-不碰凭据、不出外网；除该配置文件外不写任何文件。卸载：插件经理里 remove，再重启。
+不碰凭据、不出外网；除该配置文件外不写任何文件。
+
+## 卸载
+
+- 插件管理器 → remove → **重启 DSH**；
+- 或从 profile 的 `dependencies` 与 `dsh.profile.bundles` 各删一行、删掉 `node_modules` 里的 junction，重启；
+- `$DSH_HOME/dsh-button/buttons.json` 不会自动删除；不需要就手动删（删文件 = 回到默认 5 条）。
 
 ## 自检
 

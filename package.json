@@ -29,6 +29,9 @@
   "engines": {
     "node": ">=20"
   },
+  "scripts": {
+    "test": "node --test test/client.test.mjs test/buttons.test.mjs"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc"
   },
@@ -41,7 +44,8 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "dsh",

@@ -220,6 +220,13 @@ node --check lib/index.js
 node --check lib/buttons.js
 ```
 
+## 兼容性
+
+| DSH 版本 | 结果 |
+|---|---|
+| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 27/27 |
+| 其他版本 | 未测；`package.json` 只声明 `engines.dsh >= 0.2.0-rc.2` |
+
 ## 已知边界
 
 - **桌面端页面在 `dsh-app://` 下**：页面源不是 `http://127.0.0.1:<port>`，`/api/` 是否被该协议转发**未验证**。

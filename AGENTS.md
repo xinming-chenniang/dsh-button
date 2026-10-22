@@ -1,0 +1,21 @@
+# dsh-button —— 插件工作区指针
+
+> 本仓库是 `D:\dsh\plugins\` 产品组合中的**获客产品**。开工前先读：
+> 1. [`../PRODUCT-PLAN.md`](../PRODUCT-PLAN.md) — 组合定位、90 天目标、发布日历
+> 2. [`../RELEASING.md`](../RELEASING.md) — 发布规则、冻结期、checklist
+> 3. [`../README.md`](../README.md) — 组合清单与当前版本
+> 4. 本仓库 `README.md` — 安装、边界、兼容性
+
+## 当前状态
+
+- 版本：**1.2.3**（npm `latest`；GitHub `v1.2.3`）
+- 市场：PR **#8774** 已 green、待合并；**合并前不要改 PR 里的 tarball**
+- 测试：`npm test` → 29/29
+- 定位：输入框旁的**纯文本**按钮（继续/自定义/重发）；不执行宿主命令；有草稿不发送
+
+## 硬规则
+
+- 不为了 README/CHANGELOG/截图单独发版；非安全修改攒到 release train。
+- 发布前：`npm test`、`npm pack --dry-run`、README/CHANGELOG 对齐、干净工作树，缺一不发。
+- 不主动做 Phase 2（跟随 `busyEnter`）；先等真实需求，并先解决 `configForms`/`steeringAvailable` 验证。
+- 不改 `~/.dsh/profiles`；profile 只 `link:` 本目录。

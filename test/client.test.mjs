@@ -234,7 +234,7 @@ test('插件对象形状：名字、注入面、动作行只注册一格（输�
   plugin.apply(ctx)
   assert.equal(ctx.registrations.length, 1, '只应注册一格（整行动作）')
   const [reg] = ctx.registrations
-  assert.equal(reg.options.name, 'conversation.input.dock', '动作行放在输入框上方的 dock')
+  assert.equal(reg.options.name, 'conversation.composer.dock', '动作行挂在卡片下方的 dock 上（实际 portal 到它前面）')
   assert.equal(reg.options.id, `${PKG.name}:actions`)
   assert.equal(reg.options.order, 10)
   assert.ok(!ctx.registrations.some((item) => item.options.id === `${PKG.name}:suggest`), '按建议执行已合并，不应再有它')
@@ -925,5 +925,39 @@ test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前�
     assert.equal(titleOf(findAllByClass(mounted.tree, 'dsh-custom-preset-restore')[0]), '恢复「继续」')
   } finally {
     globalThis.fetch = prevFetch
+  }
+})
+
+test('B1：动作行 portal 到卡片与统计行之间的宿主容器', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevDocument = globalThis.document
+  const host = {
+    attrs: {},
+    style: {},
+    setAttribute(name) { this.attrs[name] = true },
+    hasAttribute(name) { return this.attrs[name] === true },
+  }
+  const parent = {
+    children: [],
+    insertBefore(node) { this.children.push(node); return node },
+  }
+  const dock = { parentElement: parent }
+  globalThis.document = { querySelector: () => dock, createElement: () => host }
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, buttons: [] }) })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const layer = mounted.tree.children[0]
+    assert.equal(layer.type, 'portal', '动作行应当走 portal')
+    assert.equal(layer.props.container, host, 'portal 目标是自建宿主容器')
+    assert.deepEqual(parent.children, [host], '宿主容器插在 dock 前面')
+    assert.ok(findByClass(layer, 'dsh-action-row'), '整行内容在 portal 里')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevDocument === undefined) delete globalThis.document
+    else globalThis.document = prevDocument
   }
 })

@@ -20,14 +20,14 @@
   不再加「直接发送 / 填入输入框」前缀；继续的提示就是它要发出去的文字（不是标签）。
   编辑器控件补齐说明性 title（上移 / 删除这条 / 保存到配置文件…），预设的删除 / 恢复显示当前标签；
   方式下拉只说「点一下做什么」。「重发上一条」（动态内容）暂不并入。
-- feat：**动作行移到输入框下方**（卡片与统计行之间，方案 B1）——注册 `conversation.composer.dock`
-  一个条目（渲染 null），在 `[data-composer-dock]` 前插一个 block 容器并 portal 进去。行内再分左右：
-  `insert` 类靠左（对着附件键），`send` 类靠右（对着发送键），「＋」在右组末尾。输入框控件行只剩模型等
-  宿主控件，模型名不再被挤；隐藏预设改为行内过滤，整行只注册一格。找不到宿主容器时退回原地渲染。
+- feat：**编辑器新增「位置」三选一**：卡片下方 / 卡片底部 / 控制行（`localStorage['dsh-button:layout']`
+  记住，切换即时生效）。下方/底部复用 `conversation.composer.dock` 一格 + portal（分别插在统计行前 /
+  卡片末尾）；控制行改用 `conversation.input.left` + `conversation.input.right` 两格（insert 左、
+  send＋入口右；发送组在模型左边，模型会被挤）。切换时编辑器关闭；控制行保存后左格重挂以同步新配置。
   回退基线：commit `f6cd89e`（动作行在输入框上方）。
-- test：新增 15 例（`moveRow` / `moveInSection` 越界与不可变、宿主插入 API 的成功/拒绝/忙态/回退、
-  继续与自定义按钮的填入点击、两区分组与保存 mode、跨区移动、区内排序、portal 到 body、
-  悬浮提示、编辑器控件 title、B1 容器插入），总计 **44/44**。
+- test：新增 18 例（三种位置、布局切换与 localStorage、两格分组、`moveRow` / `moveInSection`、
+  宿主插入 API、填入点击、分区保存 mode、排序、portal、悬浮提示、编辑器 title、B1/卡片容器），
+  总计 **47/47**。
 - 未发版：按组合规则攒到 release train；不动 npm 已发布的 1.2.3，也不动市场 PR #8774 的 tarball。
 
 ## 1.2.3 — 2026-10-23

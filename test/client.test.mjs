@@ -223,6 +223,14 @@ function dockButton(ctx, className) {
   return button
 }
 
+/** 按注册 id 挂载一个格子（bar 模式左右两格用）。 */
+function mountRegistration(ctx, id) {
+  const registration = ctx.registrations.find((item) => item.options.id === id)
+  assert.ok(registration, `没有注册 ${id}`)
+  const seat = registration.component()
+  return mountComponent(seat.children[0].type)
+}
+
 test('插件对象形状：名字、注入面、动作行只注册一格（输入框上方）', async () => {
   const plugin = await loadPlugin()
   assert.equal(plugin.name, PKG.name)
@@ -957,6 +965,119 @@ test('B1：动作行 portal 到卡片与统计行之间的宿主容器', async (
     assert.ok(findByClass(layer, 'dsh-action-row'), '整行内容在 portal 里')
   } finally {
     globalThis.fetch = prevFetch
+    if (prevDocument === undefined) delete globalThis.document
+    else globalThis.document = prevDocument
+  }
+})
+
+test('布局 bar：两格注册，insert 进左、send＋入口进右', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevStorage = globalThis.localStorage
+  globalThis.localStorage = { getItem: () => 'bar', setItem: () => {} }
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '模板', text: '模板文字', mode: 'insert' }],
+      hidden: [],
+      presets: { continue: { mode: 'insert', label: '继续吧', text: '继续文字' } },
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(ctx.registrations.length, 2, '控制行模式应当两格')
+    assert.deepEqual(
+      ctx.registrations.map((item) => item.options.id).sort(),
+      [`${PKG.name}:insert`, `${PKG.name}:send`],
+    )
+    assert.equal(ctx.registrations.find((item) => item.options.id === `${PKG.name}:insert`)?.options.name, 'conversation.input.left')
+    assert.equal(ctx.registrations.find((item) => item.options.id === `${PKG.name}:send`)?.options.name, 'conversation.input.right')
+
+    const left = mountRegistration(ctx, `${PKG.name}:insert`)
+    assert.equal(findByClass(left.tree, 'dsh-continue-action')?.children[0], '继续吧', 'insert 类继续在左')
+    assert.ok(findAllWithClassToken(left.tree, 'dsh-custom-action-insert').length > 0, 'insert 类自定义在左')
+    assert.equal(findByClass(left.tree, 'dsh-custom-manage'), null, '入口只在右侧')
+
+    const right = mountRegistration(ctx, `${PKG.name}:send`)
+    assert.ok(findByClass(right.tree, 'dsh-resend-action'), 'send 类重发在右')
+    assert.equal(findByClass(right.tree, 'dsh-continue-action'), null, 'insert 类继续不在右')
+    assert.ok(findByClass(right.tree, 'dsh-custom-manage'), '右侧有编辑器入口')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})
+
+test('编辑器位置下拉：below→bar→below 换注册，localStorage 记住', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const writes = []
+  const prevStorage = globalThis.localStorage
+  globalThis.localStorage = { getItem: () => null, setItem: (key, value) => writes.push([key, value]) }
+  try {
+    plugin.apply(ctx)
+    assert.equal(ctx.registrations.length, 1)
+    const dock = mountDock(ctx)
+    findByClass(dock.tree, 'dsh-custom-manage').props.onClick()
+    const select = findByClass(dock.tree, 'dsh-layout-select')
+    assert.ok(select, '编辑器里应当有位置下拉')
+    assert.equal(select.props.value, 'below')
+    select.props.onChange({ target: { value: 'bar' } })
+    assert.equal(ctx.registrations.length, 2)
+    assert.deepEqual(ctx.registrations.map((item) => item.options.id).sort(), [`${PKG.name}:insert`, `${PKG.name}:send`])
+
+    const right = mountRegistration(ctx, `${PKG.name}:send`)
+    findByClass(right.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(right.tree, 'dsh-layout-select').props.onChange({ target: { value: 'below' } })
+    assert.equal(ctx.registrations.length, 1)
+    assert.equal(ctx.registrations[0].options.id, `${PKG.name}:actions`)
+    assert.deepEqual(writes, [['dsh-button:layout', 'bar'], ['dsh-button:layout', 'below']])
+  } finally {
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})
+
+test('布局 card：动作行宿主 append 进卡片', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevStorage = globalThis.localStorage
+  const prevDocument = globalThis.document
+  const host = {
+    attrs: {},
+    style: {},
+    setAttribute(name, value) { this.attrs[name] = value },
+    getAttribute(name) { return this.attrs[name] },
+    hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) },
+  }
+  const card = {
+    children: [],
+    appendChild(node) { this.children.push(node); return node },
+  }
+  const dock = { parentElement: { children: [card], insertBefore() {} }, previousElementSibling: card }
+  globalThis.localStorage = { getItem: () => 'card', setItem: () => {} }
+  globalThis.document = {
+    querySelector: () => dock,
+    createElement: () => host,
+    querySelectorAll: () => [],
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    assert.deepEqual(card.children, [host], '宿主容器应 append 进卡片')
+    assert.equal(host.getAttribute('data-dsh-action-row'), 'card')
+    const layer = mounted.tree.children[0]
+    assert.equal(layer.type, 'portal')
+    assert.equal(layer.props.container, host)
+  } finally {
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
     if (prevDocument === undefined) delete globalThis.document
     else globalThis.document = prevDocument
   }

@@ -65,7 +65,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
 > **状态**：**可用（2026-10-23 v1.2.3 发布；2026-10-24 工作树新增「直接发送 / 填入输入框 + ↑↓ 排序」，
-> 未发布；离线 44 例全过）**。
+> 未发布；离线 47 例全过）**。
 > **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
 > desktop profile 以 `link:` 指向它）。
 > **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
@@ -209,35 +209,25 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 | 填并提交 | `ctx.get('conversation').input.for(scope).setDraft(text)` + `.submit()` | `@anionex/dsh-turn-rewind`、`dsh-better-sidebar` |
 | 插入到光标处 | 同一门面的 `caretSpan()` → `{start,end}`，配 `snapshot.draftRev` 调 `insertText(text, span)` | `@deepseek-ai/dsh-client-ui-conversation` 的 `SessionInputShell`（`/` 斜杠菜单插入走同一条路径） |
 
-## 落点（输入框下方、统计行上方，左右两组）
+## 落点（三种显示方案，编辑器里切换）
 
-`lib/client.js` 顶部：
+编辑器（`＋`）顶部有「位置」下拉，**切换即生效**，记在 `localStorage['dsh-button:layout']`；
+切换时编辑器会关闭，重开即可看到当前值。
 
-```js
-const SLOT_ACTIONS = 'conversation.composer.dock'  // 挂在卡片下方 dock 上，实际 portal 到它前面
-const ORDER_ACTIONS = 10
-const ID_ACTIONS = 'dsh-button:actions'
-```
+| 值 | 位置 | 注册方式 |
+|---|---|---|
+| `below`（默认） | 卡片下方、统计行上方，整行 | `conversation.composer.dock` 一格 + portal 到 `[data-composer-dock]` 前 |
+| `card` | 卡片内部底边（控制行下面、圆角内） | 同一格 + portal 到卡片末尾 |
+| `bar` | 控制行，两格：插入在左、发送在右 | `conversation.input.left` + `conversation.input.right` |
 
-宿主在卡片下方只有一个 `composer.dock` 横排（统计条目 + `ContextMeter`），没有整行；所以：
+`below` / `card` 复用同一格 dock；`bar` 切换时会注销 dock、注册左右两格（反之亦然）。
+控制行模式里发送组在模型**左边**——模型夹在发送组和发送键之间，所以模型会被挤；这是该模式的已知代价。
 
-1. 注册一个 `composer.dock` 条目（本身渲染 null，不占统计行）；
-2. 在 `[data-composer-dock]` **前面**插一个自己的 block 容器，把动作行 portal 进去。
+左右分组规则不变：`insert` 贴左（附件键一侧），`send` + 「＋」贴右（发送键一侧）。
+`below`/`card` 依赖宿主 DOM（`data-composer-dock` / 卡片兄弟节点），DSH 升级后要回归一次；
+`bar` 用的是公开插槽，最稳。
 
-这样行落在**卡片和统计行之间**，能占满宽度；统计仍留在它下面。找不到宿主容器（旧宿主/单测）时就地渲染，功能不受影响。
-
-这一行内部再分左右：
-
-- **左组**：所有 `mode: insert` 的动作（对着输入框的附件键）；
-- **右组**：所有 `mode: send` 的动作 + 「＋」编辑器入口（对着发送键）。
-
-输入框的控件行只留附件、权限、模型和发送键，模型名不再被挤。
-预设的隐藏由行内过滤，整行只注册一次、也只有一个 id。
-
-> 这是方案 B1：依赖宿主 DOM 的 `data-composer-dock` 位置，DSH 升级后要回归一次。
-> **回退基线**：commit `f6cd89e`（动作行在输入框上方），需要对比时 `git checkout f6cd89e`。
-
-改完要**重装/重启**（客户端模块是启动时快照）。
+> **回退基线**：commit `f6cd89e`（动作行在输入框上方），需要对比时 `git switch -c above f6cd89e`。
 
 ## 安装
 
@@ -279,7 +269,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 ## 自检
 
 ```powershell
-node --test test/client.test.mjs   # 30 例：动作行 / 左右分组 / 预设隐藏 / 继续 / 自定义 / 重发 / 填入 / 分区编辑 / 排序 / portal / 悬浮提示
+node --test test/client.test.mjs   # 33 例：三种位置 / 左右分组 / 预设隐藏 / 继续 / 自定义 / 重发 / 填入 / 分区编辑 / 排序 / portal / 悬浮提示
 node --test test/buttons.test.mjs  # 14 例：默认按钮 / 配置与 hidden / presets / mode 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
 node --check lib/client.js
 node --check lib/index.js
@@ -290,7 +280,7 @@ node --check lib/buttons.js
 
 | DSH 版本 | 结果 |
 |---|---|
-| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 44/44；宿主输入门面带 `caretSpan` / `insertText`（填入走它） |
+| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 47/47；宿主输入门面带 `caretSpan` / `insertText`（填入走它） |
 | 其他版本 | 未测；`package.json` 只声明 `engines.dsh >= 0.2.0-rc.2`；更旧的宿主没有 `insertText` 时，填入退回追加到草稿末尾 |
 
 ## 已知边界

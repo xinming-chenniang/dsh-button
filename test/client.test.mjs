@@ -47,6 +47,13 @@ const fakeReactDOM = {
 let loadSeq = 0
 async function loadPlugin() {
   const loaded = []
+  // 单测默认按“卡片下方”布局跑（多数断言按一格 dock 写）；发行默认 bar 有单独用例。
+  if (globalThis.localStorage === undefined) {
+    globalThis.localStorage = {
+      getItem: (key) => (key === 'dsh-button:layout' ? 'below' : null),
+      setItem: () => {},
+    }
+  }
   globalThis.window = { __ModuleLoader__: { load: (entry) => loaded.push(entry) } }
   // 带查询串 import：ESM 会缓存模块体，不去重的话第二、三个用例拿到的是空数组（不重新执行）。
   await import(`${pathToFileURL(CLIENT).href}?case=${loadSeq++}`)
@@ -860,6 +867,20 @@ test('B1：动作行 portal 到卡片与统计行之间的宿主容器', async (
   }
 })
 
+test('发行默认布局是控制行（bar 两格）', async () => {
+  const plugin = await loadPlugin()
+  const prevStorage = globalThis.localStorage
+  delete globalThis.localStorage
+  const ctx = makeCtx()
+  try {
+    plugin.apply(ctx)
+    assert.equal(ctx.registrations.length, 2)
+    assert.deepEqual(ctx.registrations.map((item) => item.options.id).sort(), [`${PKG.name}:insert`, `${PKG.name}:send`])
+  } finally {
+    globalThis.localStorage = prevStorage
+  }
+})
+
 test('布局 bar：两格注册，insert 进左、send＋入口进右', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
@@ -911,7 +932,7 @@ test('编辑器位置下拉：below→bar→below 换注册，localStorage 记�
   const ctx = makeCtx()
   const writes = []
   const prevStorage = globalThis.localStorage
-  globalThis.localStorage = { getItem: () => null, setItem: (key, value) => writes.push([key, value]) }
+  globalThis.localStorage = { getItem: (key) => (key === 'dsh-button:layout' ? 'below' : null), setItem: (key, value) => writes.push([key, value]) }
   try {
     plugin.apply(ctx)
     assert.equal(ctx.registrations.length, 1)
@@ -1090,7 +1111,7 @@ test('模型实验开关：勾选后写 localStorage 并强制收起', async () 
     querySelector: () => null,
   }
   globalThis.localStorage = {
-    store: new Map(),
+    store: new Map([['dsh-button:layout', 'below']]),
     getItem(key) { return this.store.get(key) ?? null },
     setItem(key, value) { this.store.set(key, value) },
   }

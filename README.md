@@ -1,8 +1,9 @@
 # dsh-button —— 输入框那一排的动作（独立插件）
 
-![输入框下方的动作行：继续 / 自定义 / 重发上一条（旧版截图）](assets/composer-buttons.png)
+![控制行动作行：⋮ 设置 / 讨论·说明（填入） / 总结·继续（发送）](assets/composer-buttons.png)
 
-> 截图是 1.2 版（按钮还在输入框旁）；1.3 起整行移到输入框下方（卡片与统计行之间），发布前补新图。
+> 1.3 默认外观（控制行两格）：**⋮ = 设置**；虚线 = 填入，实底 = 发送；
+> 示例里模型收起为图标（自动/实验开关）。
 
 > **English** — One-click composer actions for DeepSeek Harness: text buttons that send or insert
 > into the draft. Every action is an ordinary button (no special presets), order is editable, and
@@ -10,7 +11,7 @@
 
 ## 快速开始
 
-点输入框下方的动作按钮（默认 6 条：**继续** + 总结 / 审查 / 测试 / 提交信息 / 解释报错）：
+点输入框下方的动作按钮（默认 4 条：**总结 / 继续 / 讨论 / 说明**）：
 
 | 按钮 | 作用 |
 |---|---|
@@ -26,6 +27,30 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > **填入输入框**不受这条限制 —— 它正是用来往草稿里加字的。
 > 忙时点击会排队（直接发送恒为 `queue`），闲时直接发出。
 > 配置在 `$DSH_HOME/dsh-button/buttons.json`；卸载见文末「卸载」。
+
+## 1.3.0 升级说明与版本策略
+
+**这是 minor（1.2.3 → 1.3.0），不是 major。** 按本组合的 semver 规则：
+
+| 类型 | 范围 |
+|---|---|
+| patch | 修 bug、兼容性修正、安全修复 |
+| **minor** | **新增行为 / 配置 / UI 能力** |
+| major | 破坏已有**配置格式 / 数据 / 安装方式** |
+
+1.3.0 有新增行为和 UI，也有一个**按钮移除**，但没有破坏配置格式、数据或安装方式：
+
+- 旧配置照常读取；旧 `presets.continue` 自动并成第一条普通按钮；
+- 旧 `hidden: ['continue']` 仍表示“已迁移/已删除”，不再补；
+- 旧 `presets.resend` 忽略（重发按钮已移除）；
+- 仍最多 8 条；安装命令、包名、入口和 cordis patch 不变。
+
+**移除「重发上一条」是有意为之**，不是兼容性 bug：需要重发的人新建一条普通按钮即可。
+这也是为什么它放在 minor 而不是 major——升级不会让旧配置读不出来，也不会丢数据。
+如果你把“按钮消失”本身定义为 breaking，那可以发 2.0.0；但那会给用户“配置/安装坏了”的错误信号，
+不建议。
+
+**建议升级动作**：升级后打开一次「设置」，确认「继续」已经变成第一条普通按钮；需要重发就加一条自定义。
 
 ## 背景与变更史（内部记录）
 
@@ -50,7 +75,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > 全部是通用、只读或低风险动作；保存过一次配置后以文件为准（清空按钮 = 真的清空，不再回退默认）。
 > **2026-10-22 v1.2**：**预设也按「标签＋内容」编辑**：「继续」的标签和发送文字都能改；
 > 「重发上一条」只能改标签（内容永远是最后一条真人消息，属于动态动作）。
-> **2026-10-24 v1.3（未发布）**：**所有动作都是普通按钮** —— 继续不再特殊，和自定义按钮一起排序；
+> **2026-10-25 v1.3.0**：**所有动作都是普通按钮** —— 继续不再特殊，和自定义按钮一起排序；
 > **重发上一条已移除**（需要重发就自建一条）；管理入口是左组最前的 **⋮**（竖向省略号），不是加号。
 > 动作仍按点法分两区；编辑器里每条右侧 `↑` / `↓`，顺序就是配置文件数组顺序。「填入」只把文字插到光标处、
 > 不提交，支持 `\n` 转义，宿主版本太旧时退回追加到草稿末尾。
@@ -65,8 +90,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > 这是"没异议、往下走"的**通用答复**（继续 / 按推荐执行 / 接受 / 好的 / 行，都点它，不用再挑词）；
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
-> **状态**：**可用（2026-10-23 v1.2.3 发布；2026-10-24 工作树新增「直接发送 / 填入输入框 + 排序 +
-> 三种位置」，未发布；离线 45 例全过）**。
+> **状态**：**可用（2026-10-25 v1.3.0；离线 46 例全过）**。
 > **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
 > desktop profile 以 `link:` 指向它）。
 > **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
@@ -120,7 +144,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 1. 环境变量 `DSH_BUTTON_CONFIG` 指向的 `.json`；
 2. `$DSH_HOME/dsh-button/buttons.json`（默认 `C:\Users\<你>\.dsh\dsh-button\buttons.json`）。
 
-文件不存在 = 自带 **6 条默认按钮**（继续 + 5 条通用动作，不会自动建文件）；保存过一次后以文件为准
+文件不存在 = 自带 **4 条默认按钮**（不会自动建文件）；保存过一次后以文件为准
 （保存空列表 = 真的清空，不会回退默认）。手写格式：
 
 ```json
@@ -137,16 +161,14 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 旧配置里的 `presets.continue` 会自动并成第一条普通按钮；旧 `hidden: ['continue']` 表示已经并过
 （或用户删了），不再补；`presets.resend` 已移除，忽略。**所有按钮一视同仁，顺序就是数组顺序。**
 
-**默认 6 条**（首次安装、还没有 `buttons.json` 时显示）：
+**默认 4 条**（首次安装、还没有 `buttons.json` 时显示，和作者当前配置一致）：
 
-| 标签 | 文字 |
-|---|---|
-| 继续 | 继续 |
-| 总结 | 总结刚才这一轮：做了什么、改了哪些文件、还剩什么 |
-| 审查 | 审查当前未提交的改动，指出 bug 和风险，先别改 |
-| 测试 | 跑相关测试，失败就修，最后报告结果 |
-| 提交信息 | 根据当前改动生成一条 commit message，先别提交 |
-| 解释报错 | 解释这个报错的原因，给出修复步骤，先别动手 |
+| 标签 | 文字 | 方式 |
+|---|---|---|
+| 总结 | 总结刚才这一轮：做了什么、改了哪些文件、还剩什么 | 发送 |
+| 继续 | 继续 | 发送 |
+| 讨论 | 只讨论，不要进行改动：`\n` | 填入 |
+| 说明 | 详细说明： | 填入 |
 
 **在界面里编辑**：点左组最前的 **⋮** 打开「设置」面板，按**点法**分两区：
 
@@ -213,9 +235,9 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 
 | 值 | 位置 | 注册方式 |
 |---|---|---|
-| `below`（默认） | 卡片下方、统计行上方，整行 | `conversation.composer.dock` 一格 + portal 到 `[data-composer-dock]` 前 |
+| `bar`（默认） | 控制行，两格：插入在左、发送在右 | `conversation.input.left` + `conversation.input.right` |
+| `below` | 卡片下方、统计行上方，整行 | `conversation.composer.dock` 一格 + portal 到 `[data-composer-dock]` 前 |
 | `card` | 卡片内部底边（控制行下面、圆角内） | 同一格 + portal 到卡片末尾 |
-| `bar` | 控制行，两格：插入在左、发送在右 | `conversation.input.left` + `conversation.input.right` |
 
 `below` / `card` 复用同一格 dock；`bar` 切换时会注销 dock、注册左右两格（反之亦然）。
 控制行模式里发送组在模型**左边**——模型夹在发送组和发送键之间，所以模型会被挤；这是该模式的已知代价。
@@ -266,12 +288,12 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 
 - 插件管理器 → remove → **重启 DSH**；
 - 或从 profile 的 `dependencies` 与 `dsh.profile.bundles` 各删一行、删掉 `node_modules` 里的 junction，重启；
-- `$DSH_HOME/dsh-button/buttons.json` 不会自动删除；不需要就手动删（删文件 = 回到默认 5 条）。
+- `$DSH_HOME/dsh-button/buttons.json` 不会自动删除；不需要就手动删（删文件 = 回到默认 4 条）。
 
 ## 自检
 
 ```powershell
-node --test test/client.test.mjs   # 31 例：三种位置 / 排序（含继续）/ ⋮位置 / 模型收起 / 预设迁移 / 填入换行 / 编辑 / portal
+node --test test/client.test.mjs   # 32 例：三种位置 / 排序（含继续）/ ⋮位置 / 模型收起 / 预设迁移 / 填入换行 / 编辑 / portal
 node --test test/buttons.test.mjs  # 14 例：默认按钮 / 配置与 hidden / presets / mode 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
 node --check lib/client.js
 node --check lib/index.js

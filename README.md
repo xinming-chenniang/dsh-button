@@ -63,7 +63,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
 > **状态**：**可用（2026-10-23 v1.2.3 发布；2026-10-24 工作树新增「直接发送 / 填入输入框 + ↑↓ 排序」，
-> 未发布；离线 40 例全过）**。
+> 未发布；离线 41 例全过）**。
 > **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
 > desktop profile 以 `link:` 指向它）。
 > **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
@@ -266,7 +266,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 ## 自检
 
 ```powershell
-node --test test/client.test.mjs   # 26 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态 / 填入 / 分区编辑 / 排序
+node --test test/client.test.mjs   # 27 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态 / 填入 / 分区编辑 / 排序 / portal
 node --test test/buttons.test.mjs  # 14 例：默认按钮 / 配置与 hidden / presets / mode 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
 node --check lib/client.js
 node --check lib/index.js
@@ -277,7 +277,7 @@ node --check lib/buttons.js
 
 | DSH 版本 | 结果 |
 |---|---|
-| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 40/40；宿主输入门面带 `caretSpan` / `insertText`（填入走它） |
+| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 41/41；宿主输入门面带 `caretSpan` / `insertText`（填入走它） |
 | 其他版本 | 未测；`package.json` 只声明 `engines.dsh >= 0.2.0-rc.2`；更旧的宿主没有 `insertText` 时，填入退回追加到草稿末尾 |
 
 ## 已知边界
@@ -293,6 +293,8 @@ node --check lib/buttons.js
   点按钮前输入框失焦也能插对位置。宿主版本太旧时退回追加到草稿末尾，状态显示「已填入末尾」。
 - **界面是否出现只能人眼看**：离线用例覆盖注册、点击、配置读写，但"格子是否真的画在输入框上"
   需要重启应用后确认。
+- **编辑器浮层挂在 `document.body` 上**（React portal，z-index 取根层叠上下文最大值）：留在输入框插槽里时
+  会被聊天区「回到底部」浮动箭头（`z-index: 8`，在另一个层叠上下文里）盖住；portal 之后才盖得住它。
 
 - **「继续」文案固定**：发出去的就是这两个字（`TRIGGER_CONTINUE`），全角、不带标点 —— 与手打文案相同；
   但按钮恒为排队，手打 Enter 受 `busyEnter` 设置影响。

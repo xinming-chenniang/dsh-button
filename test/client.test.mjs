@@ -40,6 +40,11 @@ const fakeReact = {
 /** 当前挂载的极简 hooks 运行时（见 mountComponent）；渲染外为 null。 */
 let hookForTest = null
 
+/** 最小的 react-dom 替身：只提供 createPortal（客户端只在编辑器浮层用它）。 */
+const fakeReactDOM = {
+  createPortal: (children, container) => ({ type: 'portal', props: { container }, children: [children] }),
+}
+
 /** 载入客户端半部，拿回它交给宿主的插件对象。 */
 let loadSeq = 0
 async function loadPlugin() {
@@ -50,7 +55,8 @@ async function loadPlugin() {
   assert.equal(loaded.length, 1, '客户端半部应当只调用一次 __ModuleLoader__.load')
   assert.equal(loaded[0].id, PKG.name, `模块 id 必须等于包名（否则装载不上）：期望 ${PKG.name}`)
   return loaded[0].factory((name) => {
-    assert.equal(name, 'react', `工厂只应 require('react')，实际要了 ${name}`)
+    if (name === 'react-dom') return fakeReactDOM
+    assert.equal(name, 'react', `工厂只应 require('react') / 'react-dom'，实际要了 ${name}`)
     return fakeReact
   })
 }
@@ -126,6 +132,17 @@ function findByClass(node, className) {
   if (node.props?.className === className) return node
   for (const child of node.children ?? []) {
     const hit = findByClass(child, className)
+    if (hit) return hit
+  }
+  return null
+}
+
+/** 沿元素树找第一个 type 命中的元素（门户节点的 type 是 'portal'）。 */
+function findByType(node, type) {
+  if (node === null || typeof node !== 'object') return null
+  if (node.type === type) return node
+  for (const child of node.children ?? []) {
+    const hit = findByType(child, type)
     if (hit) return hit
   }
   return null
@@ -824,5 +841,35 @@ test('编辑器：↑↓ 只在同区内换位（跳过另一区的行）', asyn
     assert.equal(downs[1].props.disabled, true, '本区最后一条不能再下移')
   } finally {
     globalThis.fetch = prevFetch
+  }
+})
+
+test('编辑器浮层 portal 到 body：不再被宿主「回到底部」浮动按钮盖住', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevDocument = globalThis.document
+  const body = { tag: 'document.body' }
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }] }),
+  })
+  globalThis.document = { body }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountCustomActions(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const portal = findByType(mounted.tree, 'portal')
+    assert.ok(portal, '打开编辑器后应当用 createPortal 渲染（否则会被聊天区浮动按钮盖住）')
+    assert.equal(portal.props.container, body, 'portal 容器必须是 document.body')
+    assert.ok(findByClass(portal, 'dsh-section-send'), '编辑器内容应挂在 portal 里')
+    assert.ok(findByClass(portal, 'dsh-custom-save'), '保存按钮也在 portal 里')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevDocument === undefined) delete globalThis.document
+    else globalThis.document = prevDocument
   }
 })

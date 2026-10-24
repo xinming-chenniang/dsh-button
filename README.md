@@ -2,7 +2,7 @@
 
 ![控制行动作行：⋮ 设置 / 讨论·说明（填入） / 总结·继续（发送）](assets/composer-buttons.png)
 
-> 1.3 默认外观（控制行两格）：**⋮ = 设置**；虚线 = 填入，实底 = 发送；
+> 1.3 默认外观（控制行两格，按钮大号）：**⋮ = 设置**；虚线 = 填入，实底 = 发送；
 > 示例里模型收起为图标（自动/实验开关）。
 
 > **English** — One-click composer actions for DeepSeek Harness: text buttons that send or insert
@@ -79,7 +79,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > **重发上一条已移除**（需要重发就自建一条）；管理入口是左组最前的 **⋮**（竖向省略号），不是加号。
 > 动作仍按点法分两区；编辑器里每条右侧 `↑` / `↓`，顺序就是配置文件数组顺序。「填入」只把文字插到光标处、
 > 不提交，支持 `\n` 转义，宿主版本太旧时退回追加到草稿末尾。
-> 编辑器里还有「模型只显示图标（实验）」开关，用宿主 CSS 变量强制模型收起。
+> 编辑器里还有「模型只显示图标（实验）」开关，用宿主 CSS 变量强制模型收起；「按钮大小」三档只作用于动作条。
 
 > **出处**：2026-10-19 本机 DSH 会话建的客户端插件（用户要求"别每次手打收尾"）；
 > 2026-10-20 用户要求把「重发上一条」也并进来；同日再加「继续」—— 用户原话："大多数时候都要说继续、
@@ -90,7 +90,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > 这是"没异议、往下走"的**通用答复**（继续 / 按推荐执行 / 接受 / 好的 / 行，都点它，不用再挑词）；
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
-> **状态**：**可用（2026-10-25 v1.3.0；离线 46 例全过）**。
+> **状态**：**可用（2026-10-25 v1.3.0；离线 47 例全过）**。
 > **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
 > desktop profile 以 `link:` 指向它）。
 > **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
@@ -251,6 +251,10 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 `--dsh-composer-model-text-display:none` / `--dsh-composer-model-icon-display:block` 强制收起。
 模型图标仍可点开选择；这是**宿主内部变量**，DSH 升级后可能失效，届时会出现文字重新展开（不会坏功能）。
 
+**按钮大小（三档）**：设置里的「按钮大小」——紧凑 22px / 标准 26px / 大 30px。
+只作用于**动作条按钮**，设置面板控件保持标准；存 `localStorage['dsh-button:size']`，**默认大号**。
+大号在控制行模式下更容易挤模型/换行。
+
 > **回退基线**：commit `f6cd89e`（动作行在输入框上方），需要对比时 `git switch -c above f6cd89e`。
 
 ## 安装
@@ -293,7 +297,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 ## 自检
 
 ```powershell
-node --test test/client.test.mjs   # 32 例：三种位置 / 排序（含继续）/ ⋮位置 / 模型收起 / 预设迁移 / 填入换行 / 编辑 / portal
+node --test test/client.test.mjs   # 33 例：三种位置 / 排序（含继续）/ ⋮位置 / 模型收起 / 按钮大小 / 预设迁移 / 填入换行 / 编辑 / portal
 node --test test/buttons.test.mjs  # 14 例：默认按钮 / 配置与 hidden / presets / mode 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
 node --check lib/client.js
 node --check lib/index.js

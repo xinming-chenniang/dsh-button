@@ -1134,3 +1134,48 @@ test('模型实验开关：勾选后写 localStorage 并强制收起', async () 
     else globalThis.localStorage = prevStorage
   }
 })
+
+test('按钮大小三档：写 localStorage、加根属性、动作条用 CSS 变量', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevDocument = globalThis.document
+  const prevStorage = globalThis.localStorage
+  const attrs = {}
+  const styles = []
+  const root = {
+    setAttribute(name, value) { attrs[name] = value },
+    removeAttribute(name) { delete attrs[name] },
+  }
+  const head = { appendChild(node) { styles.push(node) } }
+  globalThis.document = {
+    documentElement: root,
+    head,
+    body: {},
+    createElement: () => ({ setAttribute() {}, textContent: '' }),
+    querySelector: () => null,
+  }
+  globalThis.localStorage = {
+    store: new Map([['dsh-button:layout', 'below']]),
+    getItem(key) { return this.store.get(key) ?? null },
+    setItem(key, value) { this.store.set(key, value) },
+  }
+  try {
+    plugin.apply(ctx)
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    const select = findByClass(mounted.tree, 'dsh-size-select')
+    assert.ok(select, '设置里应当有按钮大小')
+    assert.equal(select.props.value, 'large')
+    assert.equal(attrs['data-dsh-button-size'], 'large', '默认就是大号')
+    select.props.onChange({ target: { value: 'compact' } })
+    assert.equal(globalThis.localStorage.getItem('dsh-button:size'), 'compact')
+    assert.equal(attrs['data-dsh-button-size'], 'compact')
+    assert.ok(styles.some((style) => /--dsh-btn-h:22px/.test(style.textContent)), '应当注入紧凑 CSS 变量')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-action').props.style.height, 'var(--dsh-btn-h, 26px)')
+  } finally {
+    if (prevDocument === undefined) delete globalThis.document
+    else globalThis.document = prevDocument
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})

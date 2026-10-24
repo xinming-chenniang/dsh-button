@@ -171,6 +171,11 @@ function findAllWithClassToken(node, token) {
   return found
 }
 
+/** 按按钮文字找动作（继续现在也是普通按钮，label 就是它的文字）。 */
+function actionByLabel(tree, label) {
+  return findAllWithClassToken(tree, 'dsh-custom-action').find((button) => button.children[0] === label) ?? null
+}
+
 /**
  * 挂载一个组件，支持 setState 触发重渲染（假 React 默认的 useState 只给初值）。
  * 每个 useState 一个槽；setter 支持函数式更新，像真 React 一样在槽值上合并。
@@ -254,7 +259,9 @@ test('继续：点击＝把「继续」填进当前会话并提交', async () =>
   const ctx = makeCtx({ calls })
   plugin.apply(ctx)
 
-  const button = dockButton(ctx, 'dsh-continue-action')
+  const mounted = mountDock(ctx)
+  const button = actionByLabel(mounted.tree, '继续')
+  assert.ok(button, '继续现在也是普通按钮')
   assert.equal(button.props.disabled, false, '有当前会话时继续可用')
   button.props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
@@ -266,7 +273,8 @@ test('有草稿时按钮不覆盖、不提交', async () => {
   const ctx = makeCtx({ calls, draft: '我正在写的草稿' })
   plugin.apply(ctx)
 
-  dockButton(ctx, 'dsh-continue-action').props.onClick()
+  const mounted = mountDock(ctx)
+  actionByLabel(mounted.tree, '继续').props.onClick()
   assert.deepEqual(calls, [['for', 'session-test']], `有草稿时只应读取 input，不应 setDraft/submit：${JSON.stringify(calls)}`)
 })
 
@@ -279,78 +287,19 @@ test('sendText 报告忙态，供「已排队」提示使用', async () => {
   assert.equal(result.running, true)
 })
 
-test('重发上一条：取最后一条真人消息的文本，覆盖草稿并提交', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({
-    calls,
-    entries: [
-      userMessage(1, '最早的'),
-      userMessage(2, [{ type: 'text', text: '上一条消息' }]),
-    ],
-  })
-  plugin.apply(ctx)
-
-  const button = dockButton(ctx, 'dsh-resend-action')
-  assert.equal(button.props.disabled, false, '有上一条用户消息时可用')
-  button.props.onClick()
-  assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '上一条消息'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
-})
-
-test('重发跳过注入消息（source.kind 不是 user），且按 seq 取最新', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({
-    calls,
-    entries: [
-      userMessage(5, '真人说的'),
-      userMessage(9, '注入的技能调用', 'skill-invocation'),
-      userMessage(7, '注入的引用', 'session-reference'),
-    ],
-  })
-  plugin.apply(ctx)
-
-  const button = dockButton(ctx, 'dsh-resend-action')
-  assert.equal(button.props.disabled, false)
-  button.props.onClick()
-  assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '真人说的'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
-})
-
-test('重发兼容裸字符串 content', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({ calls, entries: [userMessage(1, '裸文本消息')] })
-  plugin.apply(ctx)
-
-  dockButton(ctx, 'dsh-resend-action').props.onClick()
-  assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '裸文本消息'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
-})
-
 test('没有打开的会话：动作按钮都禁用，点击不提交；「＋」入口仍可用', async () => {
   const plugin = await loadPlugin()
   const calls = []
   const ctx = makeCtx({ calls, byId: {} })
   plugin.apply(ctx)
 
-  const cont = dockButton(ctx, 'dsh-continue-action')
-  const resend = dockButton(ctx, 'dsh-resend-action')
+  const mounted = mountDock(ctx)
+  const cont = actionByLabel(mounted.tree, '继续')
   assert.equal(cont.props.disabled, true)
-  assert.equal(resend.props.disabled, true)
-  assert.notEqual(dockButton(ctx, 'dsh-custom-manage').props.disabled, true, '编辑入口不依赖会话')
+  assert.notEqual(findByClass(mounted.tree, 'dsh-custom-manage').props.disabled, true, '编辑入口不依赖会话')
 
   cont.props.onClick()
-  resend.props.onClick()
   assert.deepEqual(calls, [], '禁用状态下不应提交任何东西')
-})
-
-test('只有注入消息、没有真人消息：重发禁用，继续仍可用', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({ calls, entries: [userMessage(3, '注入内容', 'agent-instructions')] })
-  plugin.apply(ctx)
-
-  assert.equal(dockButton(ctx, 'dsh-resend-action').props.disabled, true)
-  assert.equal(dockButton(ctx, 'dsh-continue-action').props.disabled, false)
 })
 
 test('老宿主留下的 state.current 仍然优先（两份取值路径都要活）', async () => {
@@ -365,7 +314,8 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
   })
   plugin.apply(ctx)
 
-  dockButton(ctx, 'dsh-continue-action').props.onClick()
+  const mounted = mountDock(ctx)
+  actionByLabel(mounted.tree, '继续').props.onClick()
   assert.deepEqual(calls, [['for', 'session-a'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
@@ -415,8 +365,8 @@ test("删掉的预设不渲染（hidden=['continue']），重发仍在", async (
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
-    assert.equal(findByClass(mounted.tree, 'dsh-continue-action'), null, '继续应当被隐藏')
-    assert.ok(findByClass(mounted.tree, 'dsh-resend-action'), '重发仍应在')
+    assert.equal(actionByLabel(mounted.tree, '继续'), null, 'hidden=continue 时不再补继续')
+    assert.ok(findByClass(mounted.tree, 'dsh-custom-manage'), '编辑入口仍在')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -437,7 +387,7 @@ test('自定义按钮：读到配置后渲染成按钮，点击发配置里的�
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     const tree = mounted.tree
-    const button = findByClass(tree, 'dsh-custom-action')
+    const button = actionByLabel(tree, '知识库')
     assert.ok(button, '应当渲染配置里的自定义按钮')
     assert.equal(button.children[0], '知识库')
     assert.equal(button.props.title, '用 knowledge-base 查我的体检', '悬浮提示只放文字预览，不再加方式前缀')
@@ -449,7 +399,7 @@ test('自定义按钮：读到配置后渲染成按钮，点击发配置里的�
   }
 })
 
-test('自定义按钮：配置为空时只渲染「＋」入口，不渲染任何动作按钮', async () => {
+test('配置为空时仍保留「继续」和「＋」入口', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -458,57 +408,8 @@ test('自定义按钮：配置为空时只渲染「＋」入口，不渲染任�
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
-    assert.equal(findByClass(mounted.tree, 'dsh-custom-action'), null)
+    assert.ok(actionByLabel(mounted.tree, '继续'), '继续是默认动作，不能再被当成特殊预设')
     assert.ok(findByClass(mounted.tree, 'dsh-custom-manage'))
-  } finally {
-    globalThis.fetch = prevFetch
-  }
-})
-
-test('预设草稿：默认值、可改标签与文字、长度/换行校验', async () => {
-  const plugin = await loadPlugin()
-  const { clonePresets, validatePresetDraft } = plugin.__internals
-  assert.deepEqual(clonePresets(undefined), {
-    continue: { label: '继续', text: '继续', mode: 'send' },
-    resend: { label: '重发上一条', mode: 'send' },
-  })
-  assert.deepEqual(validatePresetDraft({ continue: { label: '继续吧', text: '继续吧', mode: 'insert' }, resend: { label: '再来一次' } }), {
-    ok: true,
-    presets: {
-      continue: { label: '继续吧', text: '继续吧', mode: 'insert' },
-      resend: { label: '再来一次', mode: 'send' },
-    },
-  })
-  assert.equal(validatePresetDraft({ continue: { label: '', text: 'x' } }).ok, false)
-  assert.equal(validatePresetDraft({ continue: { label: 'a', text: '' } }).ok, false)
-  assert.equal(validatePresetDraft({ resend: { label: 'a'.repeat(30) } }).ok, false)
-  assert.equal(validatePresetDraft({ resend: { label: 'a\nb' } }).ok, false)
-})
-
-test('预设读取配置：继续的标签与发送文字都来自配置（remount 后生效）', async () => {
-  const plugin = await loadPlugin()
-  const calls = []
-  const ctx = makeCtx({ calls })
-  const prevFetch = globalThis.fetch
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      ok: true,
-      buttons: [],
-      hidden: [],
-      presets: { continue: { label: '继续吧', text: '继续文字' } },
-    }),
-  })
-  try {
-    plugin.apply(ctx)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountDock(ctx)
-    const button = findByClass(mounted.tree, 'dsh-continue-action')
-    assert.equal(button.children[0], '继续吧', '按钮文字应来自配置的 preset.continue.label')
-    assert.equal(button.props.title, '继续文字', '悬浮提示和自定义按钮一样，只显示会发出去的文字（不是标签）')
-    button.props.onClick()
-    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续文字'], ['submit']])
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -539,7 +440,7 @@ test('自定义按钮：编辑器里 ↑↓ 手动调整顺序，保存后按新
       { label: '乙', text: 'b' },
       { label: '丙', text: 'c' },
     ],
-    hidden: [],
+    hidden: ['continue'],
     presets: {},
   }
   globalThis.fetch = async (_url, init) => {
@@ -644,7 +545,9 @@ test('继续：配置成「填入」时点一下只填光标处，不提交', as
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const button = dockButton(ctx, 'dsh-continue-action')
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '继续')
+    assert.ok(button)
     assert.equal(button.props.style.borderStyle, 'dashed', '填入类按钮用虚线边区分')
     assert.equal(button.props.title, '继续')
     button.props.onClick()
@@ -681,6 +584,8 @@ test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提�
     const insertButton = findAllWithClassToken(tree, 'dsh-custom-action-insert')[0]
     assert.ok(insertButton, '插入类自定义按钮应当有自己的 class')
     assert.equal(insertButton.children[0], '模板')
+    assert.equal(insertButton.props.style.borderStyle, 'dashed', '填入=虚线')
+    assert.equal(insertButton.props.style.background, 'transparent', '填入=透明底')
     assert.equal(insertButton.props.title, '模板文字', '悬浮提示只放要填入的文字')
     insertButton.props.onClick()
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
@@ -688,8 +593,10 @@ test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提�
       ['focus'],
     ], `插入按钮不应 submit：${JSON.stringify(calls)}`)
     // 同一排里的直接发送按钮仍然是原来的行为
-    const sendButton = findByClass(tree, 'dsh-custom-action')
+    const sendButton = actionByLabel(tree, '收尾')
     assert.ok(sendButton, '直接发送按钮保留原 class')
+    assert.equal(sendButton.props.style.borderStyle, 'solid', '发送=实线')
+    assert.match(String(sendButton.props.style.background), /color-mix/, '发送=浅色填充')
     sendButton.props.onClick()
     assert.deepEqual(calls.slice(-3), [
       ['for', 'session-test'], ['setDraft', '收尾'], ['submit'],
@@ -709,8 +616,8 @@ test('编辑器：动作按「直接发送 / 填入输入框」两区分开；�
       { label: '甲', text: 'a' },
       { label: '乙', text: 'b', mode: 'insert' },
     ],
-    hidden: [],
-    presets: { resend: { mode: 'insert' } },
+    hidden: ['continue'],
+    presets: {},
   }
   globalThis.fetch = async (_url, init) => {
     if (init?.method === 'POST') {
@@ -728,18 +635,10 @@ test('编辑器：动作按「直接发送 / 填入输入框」两区分开；�
 
     const sendSection = () => findByClass(mounted.tree, 'dsh-section-send')
     const insertSection = () => findByClass(mounted.tree, 'dsh-section-insert')
-    // 直接发送区：继续（预设）+ 甲（自定义）；重发被改成填入，不在这一区
-    assert.equal(findAllWithClassToken(sendSection(), 'dsh-preset-continue-label').length, 1)
-    assert.equal(findAllWithClassToken(sendSection(), 'dsh-preset-resend-label').length, 0)
     assert.deepEqual(findAllWithClassToken(sendSection(), 'dsh-custom-label-input').map((input) => input.props.value), ['甲'])
-    // 填入区：重发（预设）+ 乙（自定义）
-    assert.equal(findAllWithClassToken(insertSection(), 'dsh-preset-resend-label').length, 1)
-    assert.equal(findAllWithClassToken(insertSection(), 'dsh-preset-continue-label').length, 0)
     assert.deepEqual(findAllWithClassToken(insertSection(), 'dsh-custom-label-input').map((input) => input.props.value), ['乙'])
-    assert.equal(findAllByClass(sendSection(), 'dsh-custom-mode')[0].props.value, 'send')
-    assert.equal(findAllByClass(insertSection(), 'dsh-custom-mode')[0].props.value, 'insert')
-    assert.equal(findAllByClass(sendSection(), 'dsh-preset-mode').every((select) => select.props.value === 'send'), true)
-    assert.equal(findAllByClass(insertSection(), 'dsh-preset-mode')[0].props.value, 'insert')
+    assert.equal(findAllWithClassToken(sendSection(), 'dsh-mode-send')[0].props['aria-checked'], true)
+    assert.equal(findAllWithClassToken(insertSection(), 'dsh-mode-insert')[0].props['aria-checked'], true)
 
     findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -748,10 +647,7 @@ test('编辑器：动作按「直接发送 / 填入输入框」两区分开；�
       { label: '甲', text: 'a', mode: 'send' },
       { label: '乙', text: 'b', mode: 'insert' },
     ], '每条按钮的方式要原样落盘')
-    assert.deepEqual(posts[0].presets, {
-      continue: { label: '继续', text: '继续', mode: 'send' },
-      resend: { label: '重发上一条', mode: 'insert' },
-    })
+    assert.deepEqual(posts[0].hidden, ['continue'])
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -761,7 +657,7 @@ test('编辑器：改方式会把这条移到另一区；每区的「添加一�
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
-  const base = { buttons: [{ label: '甲', text: 'a' }], hidden: [], presets: {} }
+  const base = { buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) })
   try {
     plugin.apply(ctx)
@@ -778,7 +674,7 @@ test('编辑器：改方式会把这条移到另一区；每区的「添加一�
       [''],
     )
     // 把「甲」改成填入：它移到填入区，按数组顺序排在空行前面
-    findAllByClass(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-custom-mode')[0].props.onChange({ target: { value: 'insert' } })
+    findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-mode-insert')[0].props.onClick()
     assert.deepEqual(
       findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').map((input) => input.props.value),
       ['甲', ''],
@@ -799,7 +695,7 @@ test('编辑器：↑↓ 只在同区内换位（跳过另一区的行）', asyn
       { label: '乙', text: 'b', mode: 'insert' },
       { label: '丙', text: 'c' },
     ],
-    hidden: [],
+    hidden: ['continue'],
     presets: {},
   }
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) })
@@ -851,6 +747,9 @@ test('编辑器浮层 portal 到 body：不再被宿主「回到底部」浮动�
     assert.equal(portal.props.container, body, 'portal 容器必须是 document.body')
     assert.ok(findByClass(portal, 'dsh-section-send'), '编辑器内容应挂在 portal 里')
     assert.ok(findByClass(portal, 'dsh-custom-save'), '保存按钮也在 portal 里')
+    assert.ok(findByClass(portal, 'dsh-custom-editor-backdrop'), '面板背后有透明遮罩')
+    findByClass(portal, 'dsh-custom-editor-backdrop').props.onClick()
+    assert.equal(findByType(mounted.tree, 'portal'), null, '点击面板外关闭设置面板')
   } finally {
     globalThis.fetch = prevFetch
     if (prevDocument === undefined) delete globalThis.document
@@ -881,11 +780,11 @@ test('悬浮提示只放文字预览（不显示「直接发送 / 填入输入�
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     const tree = mounted.tree
-    const cont = findByClass(tree, 'dsh-continue-action')
-    assert.equal(cont.props.title, '继续', '继续与自定义按钮同一规则：只显示会发出去的文字')
+    const cont = actionByLabel(tree, '继续')
+    assert.equal(cont.props.title, '继续', '继续现在是普通按钮：只显示会发出去的文字')
     assert.doesNotMatch(String(cont.props.title), /直接发送|填入输入框/)
 
-    const sendButton = findByClass(tree, 'dsh-custom-action')
+    const sendButton = actionByLabel(tree, '甲')
     assert.equal(sendButton.props.title, '发送用的文字', '自定义按钮只显示文字预览')
     assert.equal(sendButton.props['aria-label'], sendButton.props.title, 'title 与 aria-label 同句')
 
@@ -893,11 +792,7 @@ test('悬浮提示只放文字预览（不显示「直接发送 / 填入输入�
     assert.equal(insertButton.props.title, `${'长'.repeat(120)}…`, '填入类也只显示截断后的文字')
     assert.ok(insertButton.props.title.length < longText.length, '长文字预览必须截断')
     assert.doesNotMatch(String(insertButton.props.title), /填入输入框/)
-    assert.equal(findByClass(tree, 'dsh-custom-manage').props.title, '编辑动作按钮（可改方式、排序、删除）')
-
-    // 重发先不管：保留旧规则，记录现状
-    const resend = findByClass(tree, 'dsh-resend-action')
-    assert.match(String(resend.props.title), /^重发上一条：/)
+    assert.equal(findByClass(tree, 'dsh-custom-manage').props.title, '设置')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -910,7 +805,7 @@ test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前�
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: [], presets: {} }),
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }),
   })
   try {
     plugin.apply(ctx)
@@ -926,11 +821,6 @@ test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前�
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-insert')), '添加一条（填入）')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-remove')), '删除这条')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-mode')), '点一下做什么')
-
-    const removeContinue = findAllByClass(mounted.tree, 'dsh-custom-preset-remove')[0]
-    assert.equal(titleOf(removeContinue), '从按钮条移除「继续」')
-    removeContinue.props.onClick()
-    assert.equal(titleOf(findAllByClass(mounted.tree, 'dsh-custom-preset-restore')[0]), '恢复「继续」')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -981,7 +871,10 @@ test('布局 bar：两格注册，insert 进左、send＋入口进右', async ()
     status: 200,
     json: async () => ({
       ok: true,
-      buttons: [{ label: '模板', text: '模板文字', mode: 'insert' }],
+      buttons: [
+        { label: '模板', text: '模板文字', mode: 'insert' },
+        { label: '收尾', text: '收尾', mode: 'send' },
+      ],
       hidden: [],
       presets: { continue: { mode: 'insert', label: '继续吧', text: '继续文字' } },
     }),
@@ -998,14 +891,14 @@ test('布局 bar：两格注册，insert 进左、send＋入口进右', async ()
     assert.equal(ctx.registrations.find((item) => item.options.id === `${PKG.name}:send`)?.options.name, 'conversation.input.right')
 
     const left = mountRegistration(ctx, `${PKG.name}:insert`)
-    assert.equal(findByClass(left.tree, 'dsh-continue-action')?.children[0], '继续吧', 'insert 类继续在左')
+    assert.equal(actionByLabel(left.tree, '继续吧')?.children[0], '继续吧', 'insert 类继续在左')
     assert.ok(findAllWithClassToken(left.tree, 'dsh-custom-action-insert').length > 0, 'insert 类自定义在左')
-    assert.equal(findByClass(left.tree, 'dsh-custom-manage'), null, '入口只在右侧')
+    assert.ok(findByClass(left.tree, 'dsh-custom-manage'), '＋ 固定在左组')
 
     const right = mountRegistration(ctx, `${PKG.name}:send`)
-    assert.ok(findByClass(right.tree, 'dsh-resend-action'), 'send 类重发在右')
-    assert.equal(findByClass(right.tree, 'dsh-continue-action'), null, 'insert 类继续不在右')
-    assert.ok(findByClass(right.tree, 'dsh-custom-manage'), '右侧有编辑器入口')
+    assert.equal(findByClass(right.tree, 'dsh-custom-manage'), null, '＋ 不在右侧')
+    assert.equal(actionByLabel(right.tree, '继续吧'), null, 'insert 类继续不在右')
+    assert.ok(actionByLabel(right.tree, '收尾'), 'send 类自定义在右')
   } finally {
     globalThis.fetch = prevFetch
     if (prevStorage === undefined) delete globalThis.localStorage
@@ -1031,9 +924,9 @@ test('编辑器位置下拉：below→bar→below 换注册，localStorage 记�
     assert.equal(ctx.registrations.length, 2)
     assert.deepEqual(ctx.registrations.map((item) => item.options.id).sort(), [`${PKG.name}:insert`, `${PKG.name}:send`])
 
-    const right = mountRegistration(ctx, `${PKG.name}:send`)
-    findByClass(right.tree, 'dsh-custom-manage').props.onClick()
-    findByClass(right.tree, 'dsh-layout-select').props.onChange({ target: { value: 'below' } })
+    const left = mountRegistration(ctx, `${PKG.name}:insert`)
+    findByClass(left.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(left.tree, 'dsh-layout-select').props.onChange({ target: { value: 'below' } })
     assert.equal(ctx.registrations.length, 1)
     assert.equal(ctx.registrations[0].options.id, `${PKG.name}:actions`)
     assert.deepEqual(writes, [['dsh-button:layout', 'bar'], ['dsh-button:layout', 'below']])
@@ -1083,62 +976,13 @@ test('布局 card：动作行宿主 append 进卡片', async () => {
   }
 })
 
-test('内容框转义：\\n / \\t / \\\\ 解码，换行按钮追加可读标记', async () => {
+test('内容框转义：\\n / /n / \\t / \\\\ 解码', async () => {
   const plugin = await loadPlugin()
-  const { decodeActionText, appendNewlineToken } = plugin.__internals
+  const { decodeActionText } = plugin.__internals
   assert.equal(decodeActionText('第一行\\n第二行'), '第一行\n第二行')
+  assert.equal(decodeActionText('第一行/n第二行'), '第一行\n第二行')
   assert.equal(decodeActionText('A\\tB'), 'A\tB')
   assert.equal(decodeActionText('C\\\\n'), 'C\\n')
-  assert.equal(appendNewlineToken('abc'), 'abc\\n')
-  assert.equal(appendNewlineToken(''), '\\n')
-})
-
-test('编辑器：内容框和 ↑ 之间新增换行按钮，点一下在末尾追加 \\n', async () => {
-  const plugin = await loadPlugin()
-  const ctx = makeCtx()
-  const posts = []
-  const prevFetch = globalThis.fetch
-  globalThis.fetch = async (_url, init) => {
-    if (init?.method === 'POST') {
-      const body = JSON.parse(init.body)
-      posts.push(body)
-      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
-    }
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({
-        ok: true,
-        buttons: [{ label: '多行', text: '第一行', mode: 'insert' }],
-        hidden: [],
-        presets: { continue: { text: '继续文字', mode: 'send' } },
-      }),
-    }
-  }
-  try {
-    plugin.apply(ctx)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountDock(ctx)
-    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
-
-    const customText = findByClass(mounted.tree, 'dsh-custom-text-input')
-    assert.equal(customText.props.value, '第一行')
-    findByClass(mounted.tree, 'dsh-custom-newline').props.onClick()
-    assert.equal(findByClass(mounted.tree, 'dsh-custom-text-input').props.value, '第一行\\n')
-
-    const presetText = findByClass(mounted.tree, 'dsh-preset-text-input')
-    assert.equal(presetText.props.value, '继续文字')
-    findByClass(mounted.tree, 'dsh-preset-newline').props.onClick()
-    assert.equal(findByClass(mounted.tree, 'dsh-preset-text-input').props.value, '继续文字\\n')
-
-    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(posts.length, 1)
-    assert.equal(posts[0].buttons[0].text, '第一行\\n')
-    assert.equal(posts[0].presets.continue.text, '继续文字\\n')
-  } finally {
-    globalThis.fetch = prevFetch
-  }
 })
 
 test('执行时解码：发送和填入都把 \\n 变成真换行', async () => {
@@ -1155,7 +999,7 @@ test('执行时解码：发送和填入都把 \\n 变成真换行', async () => 
         { label: '发', text: '第一行\\n第二行', mode: 'send' },
         { label: '填', text: '甲\\n乙', mode: 'insert' },
       ],
-      hidden: [],
+      hidden: ['continue'],
       presets: {},
     }),
   })
@@ -1163,7 +1007,7 @@ test('执行时解码：发送和填入都把 \\n 变成真换行', async () => 
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
-    findByClass(mounted.tree, 'dsh-custom-action').props.onClick()
+    actionByLabel(mounted.tree, '发').props.onClick()
     assert.deepEqual(calls.slice(-3), [
       ['for', 'session-test'],
       ['setDraft', '第一行\n第二行'],
@@ -1172,10 +1016,100 @@ test('执行时解码：发送和填入都把 \\n 变成真换行', async () => 
     calls.length = 0
     findAllWithClassToken(mounted.tree, 'dsh-custom-action-insert')[0].props.onClick()
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
-      ['insertText', '甲\n乙', { start: 0, end: 0, draftRev: 1 }],
+      ['setDraft', '甲\n乙'],
       ['focus'],
     ])
   } finally {
     globalThis.fetch = prevFetch
+  }
+})
+
+test('继续也是普通按钮：能跟自定义一起排序；＋ 在左组最前；重发已移除', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const posts = []
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [
+      { label: '甲', text: 'a' },
+      { label: '乙', text: 'b' },
+    ],
+    hidden: [],
+    presets: {},
+  }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    assert.equal(findByClass(mounted.tree, 'dsh-resend-action'), null, '重发按钮已移除')
+    const insertGroup = findByClass(mounted.tree, 'dsh-action-row-insert')
+    assert.equal(insertGroup.children[0].props.className, 'dsh-custom-manage', '＋ 固定在左组最前')
+
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    const labelsOf = () => findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-custom-label-input')
+      .map((input) => input.props.value)
+    assert.deepEqual(labelsOf(), ['继续', '甲', '乙'], '继续现在是第一条普通按钮')
+    // 继续下移一位 → 甲 继续 乙
+    findAllByClass(mounted.tree, 'dsh-custom-down')[0].props.onClick()
+    assert.deepEqual(labelsOf(), ['甲', '继续', '乙'], '继续可以跟自定义按钮换位')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(posts[0].buttons.map((button) => button.label), ['甲', '继续', '乙'], '顺序按编辑器落盘')
+    assert.deepEqual(posts[0].hidden, ['continue'])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('模型实验开关：勾选后写 localStorage 并强制收起', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevDocument = globalThis.document
+  const prevStorage = globalThis.localStorage
+  const attrs = {}
+  const styles = []
+  const root = {
+    setAttribute(name, value) { attrs[name] = value },
+    removeAttribute(name) { delete attrs[name] },
+  }
+  const head = { appendChild(node) { styles.push(node) } }
+  globalThis.document = {
+    documentElement: root,
+    head,
+    body: {},
+    createElement: () => ({ setAttribute() {}, textContent: '' }),
+    querySelector: () => null,
+  }
+  globalThis.localStorage = {
+    store: new Map(),
+    getItem(key) { return this.store.get(key) ?? null },
+    setItem(key, value) { this.store.set(key, value) },
+  }
+  try {
+    plugin.apply(ctx)
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    const checkbox = findByClass(mounted.tree, 'dsh-model-compact')
+    assert.ok(checkbox, '编辑器里应当有模型收起开关')
+    assert.equal(checkbox.props.checked, false)
+    checkbox.props.onChange({ target: { checked: true } })
+    assert.equal(globalThis.localStorage.getItem('dsh-button:model-compact'), '1')
+    assert.ok(Object.prototype.hasOwnProperty.call(attrs, 'data-dsh-button-model-compact'))
+    assert.ok(styles.length >= 1, '应当注入作用域 CSS')
+    assert.ok(styles.some((style) => /--dsh-composer-model-text-display:none/.test(style.textContent)))
+  } finally {
+    if (prevDocument === undefined) delete globalThis.document
+    else globalThis.document = prevDocument
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
   }
 })

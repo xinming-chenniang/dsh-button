@@ -25,12 +25,20 @@ const SLOT_RESEND = 'conversation.input.right'
 /** 最小的 React 替身：createElement 记形状，useState 取初值（支持惰性初始化函数）。 */
 const fakeReact = {
   createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
-  useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
+  // mountComponent 渲染期间会指向那一份状态槽，让 setState 真的驱动重渲染；
+  // 其他调用（直接调组件函数）仍拿到「初值 + 空 setter」。
+  useState: (init) => {
+    if (hookForTest !== null) return hookForTest(init)
+    return [typeof init === 'function' ? init() : init, () => {}]
+  },
   Fragment: Symbol('Fragment'),
   Component: class Component {
     constructor(props) { this.props = props }
   },
 }
+
+/** 当前挂载的极简 hooks 运行时（见 mountComponent）；渲染外为 null。 */
+let hookForTest = null
 
 /** 载入客户端半部，拿回它交给宿主的插件对象。 */
 let loadSeq = 0
@@ -110,6 +118,48 @@ function findByClass(node, className) {
     if (hit) return hit
   }
   return null
+}
+
+/** 收集所有 class 命中的元素（编辑器里每行都有 ↑↓，必须按序取）。 */
+function findAllByClass(node, className) {
+  const found = []
+  const walk = (item) => {
+    if (item === null || typeof item !== 'object') return
+    if (item.props?.className === className) found.push(item)
+    for (const child of item.children ?? []) walk(child)
+  }
+  walk(node)
+  return found
+}
+
+/**
+ * 挂载一个组件，支持 setState 触发重渲染（假 React 默认的 useState 只给初值）。
+ * 每个 useState 一个槽；setter 支持函数式更新，像真 React 一样在槽值上合并。
+ */
+function mountComponent(Component) {
+  const slots = []
+  let cursor = 0
+  let tree = null
+  const render = () => {
+    cursor = 0
+    hookForTest = (init) => {
+      const index = cursor++
+      if (slots[index] === undefined) slots[index] = { value: typeof init === 'function' ? init() : init }
+      const slot = slots[index]
+      const set = (next) => {
+        slot.value = typeof next === 'function' ? next(slot.value) : next
+        render()
+      }
+      return [slot.value, set]
+    }
+    try {
+      tree = Component()
+    } finally {
+      hookForTest = null
+    }
+  }
+  render()
+  return { get tree() { return tree }, render }
 }
 
 /** 取某个插槽注册出来的按钮元素：先按插槽筛，再按 class 认。 */
@@ -412,6 +462,88 @@ test('预设读取配置：继续的标签与发送文字都来自配置（remou
     assert.equal(button.children[0], '继续吧', '按钮文字应来自配置的 preset.continue.label')
     button.props.onClick()
     assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续吧'], ['submit']])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('moveRow：搬一条；越界/原地返回原数组，且不改入参', async () => {
+  const plugin = await loadPlugin()
+  const { moveRow } = plugin.__internals
+  const rows = [{ label: 'a' }, { label: 'b' }, { label: 'c' }]
+  assert.deepEqual(moveRow(rows, 1, 0).map((row) => row.label), ['b', 'a', 'c'], '上移一位')
+  assert.deepEqual(moveRow(rows, 0, 2).map((row) => row.label), ['b', 'c', 'a'], '下移到底')
+  assert.equal(moveRow(rows, 0, 0), rows, '原地不动返回原数组（不触发多余渲染）')
+  assert.equal(moveRow(rows, -1, 0), rows, '负数下标不生效')
+  assert.equal(moveRow(rows, 0, 3), rows, '越界目标不生效')
+  assert.equal(moveRow(rows, 1.5, 0), rows, '非整数下标不生效')
+  assert.equal(moveRow(null, 0, 1), null, '非数组原样返回')
+  assert.deepEqual(rows.map((row) => row.label), ['a', 'b', 'c'], '不得改动入参')
+})
+
+test('自定义按钮：编辑器里 ↑↓ 手动调整顺序，保存后按新顺序落盘与渲染', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const posts = []
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [
+      { label: '甲', text: 'a' },
+      { label: '乙', text: 'b' },
+      { label: '丙', text: 'c' },
+    ],
+    hidden: [],
+    presets: {},
+  }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
+    const seat = registration.component()
+    const CustomActions = seat.children[0].type
+    const mounted = mountComponent(CustomActions)
+    const labelsOf = () => findAllByClass(mounted.tree, 'dsh-custom-label-input').map((input) => input.props.value)
+
+    // 点「＋」打开编辑器：行序 = 配置数组顺序
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    assert.deepEqual(labelsOf(), ['甲', '乙', '丙'])
+
+    let ups = findAllByClass(mounted.tree, 'dsh-custom-up')
+    let downs = findAllByClass(mounted.tree, 'dsh-custom-down')
+    assert.equal(ups.length, 3, '每条自定义按钮都应有 ↑')
+    assert.equal(ups[0].props.disabled, true, '第一条不能再上移')
+    assert.equal(downs[2].props.disabled, true, '最后一条不能再下移')
+    assert.equal(ups[1].props.disabled, false)
+
+    // 乙上移一位 → 乙 甲 丙
+    ups[1].props.onClick()
+    assert.deepEqual(labelsOf(), ['乙', '甲', '丙'])
+
+    // 丙上移一位 → 乙 丙 甲
+    findAllByClass(mounted.tree, 'dsh-custom-up')[2].props.onClick()
+    assert.deepEqual(labelsOf(), ['乙', '丙', '甲'])
+
+    // 最后一条已到底：直接点也不该越界
+    findAllByClass(mounted.tree, 'dsh-custom-down')[2].props.onClick()
+    assert.deepEqual(labelsOf(), ['乙', '丙', '甲'], '越界的下移应当被忽略')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(posts.length, 1, '保存应当只发一次 POST')
+    assert.deepEqual(posts[0].buttons.map((item) => item.label), ['乙', '丙', '甲'], '落盘顺序 = 编辑器行序')
+    assert.deepEqual(
+      findAllByClass(mounted.tree, 'dsh-custom-action').map((button) => button.children[0]),
+      ['乙', '丙', '甲'],
+      '保存后按钮条按新顺序渲染',
+    )
   } finally {
     globalThis.fetch = prevFetch
   }

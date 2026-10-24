@@ -25,9 +25,12 @@
   卡片末尾）；控制行改用 `conversation.input.left` + `conversation.input.right` 两格（insert 左、
   send＋入口右；发送组在模型左边，模型会被挤）。切换时编辑器关闭；控制行保存后左格重挂以同步新配置。
   回退基线：commit `f6cd89e`（动作行在输入框上方）。
-- test：新增 18 例（三种位置、布局切换与 localStorage、两格分组、`moveRow` / `moveInSection`、
-  宿主插入 API、填入点击、分区保存 mode、排序、portal、悬浮提示、编辑器 title、B1/卡片容器），
-  总计 **47/47**。
+- feat：**内容框支持换行转义** —— 编辑框里的 `\n` / `\t` / `\\` 在执行时解码；内容框右侧、
+  `↑` 左边新增 `↵` 按钮，点一下在末尾追加一个可读的 `\n` 标记（可多次点）。不再对所有 `insert`
+  动作统一补换行，是否换行由内容决定。
+- test：新增 21 例（三种位置、布局切换与 localStorage、两格分组、`moveRow` / `moveInSection`、
+  宿主插入 API、填入点击、分区保存 mode、排序、portal、悬浮提示、编辑器 title、B1/卡片容器、
+  `\n` 解码与 `↵` 按钮），总计 **50/50**。
 - 未发版：按组合规则攒到 release train；不动 npm 已发布的 1.2.3，也不动市场 PR #8774 的 tarball。
 
 ## 1.2.3 — 2026-10-23

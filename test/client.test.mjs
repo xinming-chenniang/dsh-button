@@ -1082,3 +1082,100 @@ test('布局 card：动作行宿主 append 进卡片', async () => {
     else globalThis.document = prevDocument
   }
 })
+
+test('内容框转义：\\n / \\t / \\\\ 解码，换行按钮追加可读标记', async () => {
+  const plugin = await loadPlugin()
+  const { decodeActionText, appendNewlineToken } = plugin.__internals
+  assert.equal(decodeActionText('第一行\\n第二行'), '第一行\n第二行')
+  assert.equal(decodeActionText('A\\tB'), 'A\tB')
+  assert.equal(decodeActionText('C\\\\n'), 'C\\n')
+  assert.equal(appendNewlineToken('abc'), 'abc\\n')
+  assert.equal(appendNewlineToken(''), '\\n')
+})
+
+test('编辑器：内容框和 ↑ 之间新增换行按钮，点一下在末尾追加 \\n', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const posts = []
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        buttons: [{ label: '多行', text: '第一行', mode: 'insert' }],
+        hidden: [],
+        presets: { continue: { text: '继续文字', mode: 'send' } },
+      }),
+    }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const customText = findByClass(mounted.tree, 'dsh-custom-text-input')
+    assert.equal(customText.props.value, '第一行')
+    findByClass(mounted.tree, 'dsh-custom-newline').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-text-input').props.value, '第一行\\n')
+
+    const presetText = findByClass(mounted.tree, 'dsh-preset-text-input')
+    assert.equal(presetText.props.value, '继续文字')
+    findByClass(mounted.tree, 'dsh-preset-newline').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-preset-text-input').props.value, '继续文字\\n')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(posts.length, 1)
+    assert.equal(posts[0].buttons[0].text, '第一行\\n')
+    assert.equal(posts[0].presets.continue.text, '继续文字\\n')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('执行时解码：发送和填入都把 \\n 变成真换行', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, insert: { caret: [0, 0], draftRev: 1 } })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '发', text: '第一行\\n第二行', mode: 'send' },
+        { label: '填', text: '甲\\n乙', mode: 'insert' },
+      ],
+      hidden: [],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-action').props.onClick()
+    assert.deepEqual(calls.slice(-3), [
+      ['for', 'session-test'],
+      ['setDraft', '第一行\n第二行'],
+      ['submit'],
+    ])
+    calls.length = 0
+    findAllWithClassToken(mounted.tree, 'dsh-custom-action-insert')[0].props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['insertText', '甲\n乙', { start: 0, end: 0, draftRev: 1 }],
+      ['focus'],
+    ])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})

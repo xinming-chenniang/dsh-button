@@ -63,8 +63,9 @@ function userMessage(seq, content, sourceKind = 'user') {
 /**
  * 假 ctx：只实现这个插件用到的表面。
  * `entries` 是会话事件窗口（`binding.eventSource.getSnapshot().entries`）。
+ * `insert` 非空时，给输入门面加上宿主的光标插入 API（`caretSpan` / `snapshot.draftRev` / `insertText` / `focus`）。
  */
-function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false } = {}) {
+function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false, insert = null } = {}) {
   const services = {
     sessions: {
       list: { getSnapshot: () => ({ ids: Object.keys(byId), byId }) },
@@ -78,11 +79,21 @@ function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, e
       input: {
         for: (scope) => {
           calls.push(['for', scope.id])
-          return {
+          const api = {
             draftSnapshot: { text: draft },
             setDraft: (text) => calls.push(['setDraft', text]),
             submit: () => calls.push(['submit']),
           }
+          if (insert !== null) {
+            api.snapshot = { draftRev: insert.draftRev, phase: insert.phase }
+            api.caretSpan = () => ({ start: insert.caret[0], end: insert.caret[1] })
+            api.insertText = (text, span) => {
+              calls.push(['insertText', text, span])
+              return insert.applied ?? true
+            }
+            api.focus = () => calls.push(['focus'])
+          }
+          return api
         },
       },
     },
@@ -132,6 +143,19 @@ function findAllByClass(node, className) {
   return found
 }
 
+/** 按 class token 收集（预设行的 class 是「dsh-preset-label-input dsh-preset-continue-label」这种组合）。 */
+function findAllWithClassToken(node, token) {
+  const found = []
+  const walk = (item) => {
+    if (item === null || typeof item !== 'object') return
+    const tokens = String(item.props?.className ?? '').split(/\s+/)
+    if (tokens.includes(token)) found.push(item)
+    for (const child of item.children ?? []) walk(child)
+  }
+  walk(node)
+  return found
+}
+
 /**
  * 挂载一个组件，支持 setState 触发重渲染（假 React 默认的 useState 只给初值）。
  * 每个 useState 一个槽；setter 支持函数式更新，像真 React 一样在槽值上合并。
@@ -173,6 +197,15 @@ function buttonAt(ctx, slot, className) {
     if (button) return button
   }
   assert.fail(`${slot} 里找不到 ${className} 按钮`)
+}
+
+/** 挂载自定义按钮那一格组件（带 hooks 运行时）。 */
+function mountCustomActions(ctx) {
+  const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
+  assert.ok(registration, '应当注册自定义按钮那一格')
+  const seat = registration.component()
+  const CustomActions = seat.children[0].type
+  return mountComponent(CustomActions)
 }
 
 test('插件对象形状：名字、注入面、三格分别注册到两个插槽', async () => {
@@ -321,14 +354,20 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
 test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、上限与长度校验）', async () => {
   const plugin = await loadPlugin()
   const { blankCustomRow, validateCustomRows, MAX_CUSTOM } = plugin.__internals
-  assert.deepEqual(blankCustomRow(), { label: '', text: '' })
+  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send' })
+  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert' })
   // 空行直接跳过，不要求用户自己删干净
   assert.deepEqual(validateCustomRows([
     { label: ' 收尾 ', text: ' 收尾 ' },
     blankCustomRow(),
   ]), {
     ok: true,
-    buttons: [{ label: '收尾', text: '收尾' }],
+    buttons: [{ label: '收尾', text: '收尾', mode: 'send' }],
+  })
+  // mode 原样带上（编辑器按方式分区）
+  assert.deepEqual(validateCustomRows([{ label: '模板', text: 'x', mode: 'insert' }]), {
+    ok: true,
+    buttons: [{ label: '模板', text: 'x', mode: 'insert' }],
   })
   // 只填一半才报错，并指明第几条
   const labelOnly = validateCustomRows([{ label: '只有标签', text: '' }])
@@ -342,7 +381,7 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   assert.equal(validateCustomRows([{ label: 'a'.repeat(30), text: 'x' }]).ok, false)
   assert.equal(validateCustomRows([{ label: 'a', text: 'x'.repeat(600) }]).ok, false)
   // 不带 "=" 的标签也合法（旧的行格式要求已取消）
-  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x' }] })
+  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send' }] })
 })
 
 test("删掉的预设真的从插槽移除（hidden=['continue']）", async () => {
@@ -423,12 +462,15 @@ test('预设草稿：默认值、可改标签与文字、长度/换行校验', a
   const plugin = await loadPlugin()
   const { clonePresets, validatePresetDraft } = plugin.__internals
   assert.deepEqual(clonePresets(undefined), {
-    continue: { label: '继续', text: '继续' },
-    resend: { label: '重发上一条' },
+    continue: { label: '继续', text: '继续', mode: 'send' },
+    resend: { label: '重发上一条', mode: 'send' },
   })
-  assert.deepEqual(validatePresetDraft({ continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } }), {
+  assert.deepEqual(validatePresetDraft({ continue: { label: '继续吧', text: '继续吧', mode: 'insert' }, resend: { label: '再来一次' } }), {
     ok: true,
-    presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } },
+    presets: {
+      continue: { label: '继续吧', text: '继续吧', mode: 'insert' },
+      resend: { label: '再来一次', mode: 'send' },
+    },
   })
   assert.equal(validatePresetDraft({ continue: { label: '', text: 'x' } }).ok, false)
   assert.equal(validatePresetDraft({ continue: { label: 'a', text: '' } }).ok, false)
@@ -544,6 +586,242 @@ test('自定义按钮：编辑器里 ↑↓ 手动调整顺序，保存后按新
       ['乙', '丙', '甲'],
       '保存后按钮条按新顺序渲染',
     )
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('填入：走宿主光标插入 API（caretSpan + draftRev + insertText），不提交', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '前后', insert: { caret: [1, 1], draftRev: 7 } })
+  assert.deepEqual(plugin.__internals.insertAtCaret(ctx, '中间'), { ok: true })
+  assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+    ['insertText', '中间', { start: 1, end: 1, draftRev: 7 }],
+    ['focus'],
+  ], `实际调用：${JSON.stringify(calls)}`)
+})
+
+test('填入：宿主拒绝（版本号不匹配）与忙态都不提交、不覆盖草稿', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const rejected = makeCtx({ calls, insert: { caret: [0, 0], draftRev: 1, applied: false } })
+  assert.deepEqual(plugin.__internals.insertAtCaret(rejected, 'x'), { ok: false, why: 'rejected' })
+  assert.equal(calls.some((call) => call[0] === 'setDraft' || call[0] === 'submit'), false, '被拒绝时不能退化成覆盖草稿')
+  assert.deepEqual(calls.map((call) => call[0]), ['for', 'insertText'], `只应尝试一次插入：${JSON.stringify(calls)}`)
+
+  const busyCalls = []
+  const busy = makeCtx({ calls: busyCalls, insert: { caret: [0, 0], draftRev: 1, phase: 'submitting' } })
+  assert.deepEqual(plugin.__internals.insertAtCaret(busy, 'x'), { ok: false, why: 'busy' })
+  assert.deepEqual(busyCalls, [['for', 'session-test']])
+})
+
+test('填入：旧宿主没有插入 API 时追加到草稿末尾，并标记 fallback', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '已有内容' })
+  assert.deepEqual(plugin.__internals.insertAtCaret(ctx, '新内容'), { ok: true, fallback: true })
+  assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '已有内容\n新内容']])
+
+  const emptyCalls = []
+  const empty = makeCtx({ calls: emptyCalls })
+  assert.deepEqual(plugin.__internals.insertAtCaret(empty, '只填这句'), { ok: true, fallback: true })
+  assert.deepEqual(emptyCalls.filter((call) => call[0] !== 'for'), [['setDraft', '只填这句']])
+})
+
+test('继续：配置成「填入」时点一下只填光标处，不提交', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, insert: { caret: [2, 2], draftRev: 3 } })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [], hidden: [], presets: { continue: { mode: 'insert' } } }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const button = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
+    assert.equal(button.props.style.borderStyle, 'dashed', '填入类按钮用虚线边区分')
+    assert.match(String(button.props.title), /填入/)
+    button.props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['insertText', '继续', { start: 2, end: 2, draftRev: 3 }],
+      ['focus'],
+    ], `不应 submit：${JSON.stringify(calls)}`)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提交', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, insert: { caret: [0, 0], draftRev: 2 } })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '模板', text: '模板文字', mode: 'insert' },
+        { label: '收尾', text: '收尾', mode: 'send' },
+      ],
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
+    const inner = registration.component().children[0].type
+    const tree = inner()
+    const insertButton = findAllWithClassToken(tree, 'dsh-custom-action-insert')[0]
+    assert.ok(insertButton, '插入类自定义按钮应当有自己的 class')
+    assert.equal(insertButton.children[0], '模板')
+    assert.match(String(insertButton.props.title), /填入/)
+    insertButton.props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['insertText', '模板文字', { start: 0, end: 0, draftRev: 2 }],
+      ['focus'],
+    ], `插入按钮不应 submit：${JSON.stringify(calls)}`)
+    // 同一排里的直接发送按钮仍然是原来的行为
+    const sendButton = findByClass(tree, 'dsh-custom-action')
+    assert.ok(sendButton, '直接发送按钮保留原 class')
+    sendButton.props.onClick()
+    assert.deepEqual(calls.slice(-3), [
+      ['for', 'session-test'], ['setDraft', '收尾'], ['submit'],
+    ], `发送按钮仍应 setDraft+submit：${JSON.stringify(calls)}`)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('编辑器：动作按「直接发送 / 填入输入框」两区分开；保存带上每条的方式', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ insert: { caret: [0, 0], draftRev: 1 } })
+  const posts = []
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [
+      { label: '甲', text: 'a' },
+      { label: '乙', text: 'b', mode: 'insert' },
+    ],
+    hidden: [],
+    presets: { resend: { mode: 'insert' } },
+  }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountCustomActions(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const sendSection = () => findByClass(mounted.tree, 'dsh-section-send')
+    const insertSection = () => findByClass(mounted.tree, 'dsh-section-insert')
+    // 直接发送区：继续（预设）+ 甲（自定义）；重发被改成填入，不在这一区
+    assert.equal(findAllWithClassToken(sendSection(), 'dsh-preset-continue-label').length, 1)
+    assert.equal(findAllWithClassToken(sendSection(), 'dsh-preset-resend-label').length, 0)
+    assert.deepEqual(findAllWithClassToken(sendSection(), 'dsh-custom-label-input').map((input) => input.props.value), ['甲'])
+    // 填入区：重发（预设）+ 乙（自定义）
+    assert.equal(findAllWithClassToken(insertSection(), 'dsh-preset-resend-label').length, 1)
+    assert.equal(findAllWithClassToken(insertSection(), 'dsh-preset-continue-label').length, 0)
+    assert.deepEqual(findAllWithClassToken(insertSection(), 'dsh-custom-label-input').map((input) => input.props.value), ['乙'])
+    assert.equal(findAllByClass(sendSection(), 'dsh-custom-mode')[0].props.value, 'send')
+    assert.equal(findAllByClass(insertSection(), 'dsh-custom-mode')[0].props.value, 'insert')
+    assert.equal(findAllByClass(sendSection(), 'dsh-preset-mode').every((select) => select.props.value === 'send'), true)
+    assert.equal(findAllByClass(insertSection(), 'dsh-preset-mode')[0].props.value, 'insert')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(posts.length, 1)
+    assert.deepEqual(posts[0].buttons, [
+      { label: '甲', text: 'a', mode: 'send' },
+      { label: '乙', text: 'b', mode: 'insert' },
+    ], '每条按钮的方式要原样落盘')
+    assert.deepEqual(posts[0].presets, {
+      continue: { label: '继续', text: '继续', mode: 'send' },
+      resend: { label: '重发上一条', mode: 'insert' },
+    })
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('编辑器：改方式会把这条移到另一区；每区的「添加一条」沿用本区方式', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const base = { buttons: [{ label: '甲', text: 'a' }], hidden: [], presets: {} }
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountCustomActions(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    // 填入区一开始只有预设置位（这里预设都是直接发送，所以没有行）
+    assert.equal(findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').length, 0)
+    // 在填入区加一条：空行落在填入区
+    findByClass(mounted.tree, 'dsh-custom-add-insert').props.onClick()
+    assert.deepEqual(
+      findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').map((input) => input.props.value),
+      [''],
+    )
+    // 把「甲」改成填入：它移到填入区，按数组顺序排在空行前面
+    findAllByClass(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-custom-mode')[0].props.onChange({ target: { value: 'insert' } })
+    assert.deepEqual(
+      findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').map((input) => input.props.value),
+      ['甲', ''],
+    )
+    assert.equal(findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-custom-label-input').length, 0)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('编辑器：↑↓ 只在同区内换位（跳过另一区的行）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [
+      { label: '甲', text: 'a' },
+      { label: '乙', text: 'b', mode: 'insert' },
+      { label: '丙', text: 'c' },
+    ],
+    hidden: [],
+    presets: {},
+  }
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountCustomActions(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const labelsOf = (section) => findAllWithClassToken(section, 'dsh-custom-label-input').map((input) => input.props.value)
+    let sendSection = findByClass(mounted.tree, 'dsh-section-send')
+    assert.deepEqual(labelsOf(sendSection), ['甲', '丙'], '填入类那条不参与直接发送区的排序')
+    const ups = findAllByClass(sendSection, 'dsh-custom-up')
+    assert.equal(ups[0].props.disabled, true, '本区第一条不能再上移')
+    assert.equal(ups[1].props.disabled, false)
+    ups[1].props.onClick()
+
+    sendSection = findByClass(mounted.tree, 'dsh-section-send')
+    assert.deepEqual(labelsOf(sendSection), ['丙', '甲'], '同区内换位')
+    assert.deepEqual(labelsOf(findByClass(mounted.tree, 'dsh-section-insert')), ['乙'], '另一区顺序不变')
+
+    const downs = findAllByClass(sendSection, 'dsh-custom-down')
+    assert.equal(downs[1].props.disabled, true, '本区最后一条不能再下移')
   } finally {
     globalThis.fetch = prevFetch
   }

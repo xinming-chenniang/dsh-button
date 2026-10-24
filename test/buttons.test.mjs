@@ -80,13 +80,13 @@ function buttonsHandler() {
 test('validateConfig：接受数组与 {buttons}，去掉首尾空白，hidden 默认空、presets 用默认值', () => {
   assert.deepEqual(validateConfig([{ label: ' 收尾 ', text: ' 收尾 ' }]), {
     ok: true,
-    buttons: [{ label: '收尾', text: '收尾' }],
+    buttons: [{ label: '收尾', text: '收尾', mode: 'send' }],
     hidden: [],
     presets: DEFAULT_PRESETS,
   })
   assert.deepEqual(validateConfig({ buttons: [{ label: '知识库', text: '用 knowledge-base 查一下' }] }), {
     ok: true,
-    buttons: [{ label: '知识库', text: '用 knowledge-base 查一下' }],
+    buttons: [{ label: '知识库', text: '用 knowledge-base 查一下', mode: 'send' }],
     hidden: [],
     presets: DEFAULT_PRESETS,
   })
@@ -96,6 +96,8 @@ test('validateConfig：接受数组与 {buttons}，去掉首尾空白，hidden �
     hidden: ['continue', 'resend'],
     presets: DEFAULT_PRESETS,
   })
+  // 1.2.x 写的配置没有 mode 字段 = 直接发送（向后兼容）
+  assert.deepEqual(validateConfig([{ label: '旧', text: '旧' }]).buttons, [{ label: '旧', text: '旧', mode: 'send' }])
 })
 
 test('validateConfig：拒绝超限、空字段与换行标签；允许 "=" 与多行文字', () => {
@@ -109,17 +111,36 @@ test('validateConfig：拒绝超限、空字段与换行标签；允许 "=" 与�
   // 编辑器不再用「标签 = 文字」的行格式，标签里的 "=" 就是普通字符；文字可以是多行
   assert.deepEqual(validateConfig([{ label: 'a=b', text: '第一行\n第二行' }]), {
     ok: true,
-    buttons: [{ label: 'a=b', text: '第一行\n第二行' }],
+    buttons: [{ label: 'a=b', text: '第一行\n第二行', mode: 'send' }],
     hidden: [],
     presets: DEFAULT_PRESETS,
   })
+})
+
+test('validateConfig：mode 只接受 send / insert，未知值明确报错', () => {
+  assert.deepEqual(validateConfig([{ label: '模板', text: 'x', mode: 'insert' }]).buttons, [{ label: '模板', text: 'x', mode: 'insert' }])
+  const bad = validateConfig([{ label: '模板', text: 'x', mode: 'paste' }])
+  assert.equal(bad.ok, false)
+  assert.match(bad.message, /mode/)
+  assert.match(bad.message, /send/)
+  assert.match(bad.message, /insert/)
+  const badPreset = validateConfig({ buttons: [], presets: { continue: { mode: 'steer' } } })
+  assert.equal(badPreset.ok, false)
+  assert.match(badPreset.message, /continue/)
 })
 
 test('validatePresets：缺省补默认值；自定义标签/文字有效；超长或换行报错', () => {
   assert.deepEqual(validatePresets(undefined), { ok: true, presets: DEFAULT_PRESETS })
   assert.deepEqual(validatePresets({ continue: { label: ' 继续吧 ', text: ' 继续吧 ' }, resend: { label: ' 再来一次 ' } }), {
     ok: true,
-    presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } },
+    presets: {
+      continue: { label: '继续吧', text: '继续吧', mode: 'send' },
+      resend: { label: '再来一次', mode: 'send' },
+    },
+  })
+  assert.deepEqual(validatePresets({ continue: { mode: 'insert' }, resend: { mode: 'insert' } }).presets, {
+    continue: { label: '继续', text: '继续', mode: 'insert' },
+    resend: { label: '重发上一条', mode: 'insert' },
   })
   assert.equal(validatePresets({ continue: { label: 'a'.repeat(30) } }).ok, false)
   assert.equal(validatePresets({ resend: { label: 'a\nb' } }).ok, false)
@@ -161,25 +182,26 @@ test('loadConfig：文件存在但按钮为空 → 不回退到默认按钮（�
 test('saveConfig：自动建目录、原子写，读回来是同一份（含 hidden）', async () => {
   await withConfigFile(({ dir, file }) => {
     const nested = join(dir, 'nested', 'buttons.json')
-    const saved = saveConfig([{ label: '收尾', text: '收尾' }], ['resend'], DEFAULT_PRESETS, nested)
+    const saved = saveConfig([{ label: '收尾', text: '收尾', mode: 'send' }], ['resend'], DEFAULT_PRESETS, nested)
     assert.equal(saved.ok, true, saved.message)
     const loaded = loadConfig(nested)
     assert.equal(loaded.ok, true)
-    assert.deepEqual(loaded.buttons, [{ label: '收尾', text: '收尾' }])
+    assert.deepEqual(loaded.buttons, [{ label: '收尾', text: '收尾', mode: 'send' }])
     assert.deepEqual(loaded.hidden, ['resend'])
     assert.match(readFileSync(nested, 'utf8'), /"hidden"/)
+    assert.match(readFileSync(nested, 'utf8'), /"mode"/)
   })
 })
 
 test('GET 路由：返回当前配置、hidden、presets 与路径', async () => {
   await withConfigFile(async ({ file }) => {
-    saveConfig([{ label: '知识库', text: '用 knowledge-base 查' }], ['continue'], DEFAULT_PRESETS, file)
+    saveConfig([{ label: '知识库', text: '用 knowledge-base 查', mode: 'insert' }], ['continue'], DEFAULT_PRESETS, file)
     const handler = buttonsHandler()
     const res = fakeRes()
     await handler(fakeReq({ method: 'GET' }), res)
     assert.equal(res.out.status, 200)
     assert.equal(res.out.payload.ok, true)
-    assert.deepEqual(res.out.payload.buttons, [{ label: '知识库', text: '用 knowledge-base 查' }])
+    assert.deepEqual(res.out.payload.buttons, [{ label: '知识库', text: '用 knowledge-base 查', mode: 'insert' }])
     assert.deepEqual(res.out.payload.hidden, ['continue'])
     assert.deepEqual(res.out.payload.presets, DEFAULT_PRESETS)
     assert.equal(res.out.payload.defaults, false, '已有配置文件时不应再标记为默认')
@@ -199,7 +221,7 @@ test('GET 路由：首次安装（无配置文件）返回默认按钮并标记 
   })
 })
 
-test('POST 路由：保存合法配置（含 hidden 与 presets）并落盘', async () => {
+test('POST 路由：保存合法配置（含 hidden、presets 与 mode）并落盘', async () => {
   await withConfigFile(async ({ file }) => {
     const handler = buttonsHandler()
     const res = fakeRes()
@@ -207,31 +229,37 @@ test('POST 路由：保存合法配置（含 hidden 与 presets）并落盘', as
       fakeReq({
         method: 'POST',
         body: {
-          buttons: [{ label: '收尾', text: '收尾' }],
+          buttons: [
+            { label: '收尾', text: '收尾' },
+            { label: '模板', text: '插入用', mode: 'insert' },
+          ],
           hidden: ['resend'],
-          presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次' } },
+          presets: { continue: { label: '继续吧', text: '继续吧' }, resend: { label: '再来一次', mode: 'insert' } },
         },
       }),
       res,
     )
     assert.equal(res.out.status, 200)
-    assert.deepEqual(res.out.payload.buttons, [{ label: '收尾', text: '收尾' }])
+    assert.deepEqual(res.out.payload.buttons, [{ label: '收尾', text: '收尾', mode: 'send' }, { label: '模板', text: '插入用', mode: 'insert' }])
     assert.deepEqual(res.out.payload.hidden, ['resend'])
     assert.deepEqual(res.out.payload.presets, {
-      continue: { label: '继续吧', text: '继续吧' },
-      resend: { label: '再来一次' },
+      continue: { label: '继续吧', text: '继续吧', mode: 'send' },
+      resend: { label: '再来一次', mode: 'insert' },
     })
     const saved = JSON.parse(readFileSync(file, 'utf8'))
-    assert.deepEqual(saved.buttons, [{ label: '收尾', text: '收尾' }])
+    assert.deepEqual(saved.buttons, [
+      { label: '收尾', text: '收尾', mode: 'send' },
+      { label: '模板', text: '插入用', mode: 'insert' },
+    ])
     assert.deepEqual(saved.hidden, ['resend'])
-    assert.deepEqual(saved.presets.continue, { label: '继续吧', text: '继续吧' })
-    assert.deepEqual(saved.presets.resend, { label: '再来一次' })
+    assert.deepEqual(saved.presets.continue, { label: '继续吧', text: '继续吧', mode: 'send' })
+    assert.deepEqual(saved.presets.resend, { label: '再来一次', mode: 'insert' })
   })
 })
 
 test('POST 路由：非法配置 → 400，且不覆盖旧文件（含非法 hidden）', async () => {
   await withConfigFile(async ({ file }) => {
-    saveConfig([{ label: '旧', text: '旧' }], [], DEFAULT_PRESETS, file)
+    saveConfig([{ label: '旧', text: '旧', mode: 'send' }], [], DEFAULT_PRESETS, file)
     const handler = buttonsHandler()
 
     const badButton = fakeRes()
@@ -244,7 +272,7 @@ test('POST 路由：非法配置 → 400，且不覆盖旧文件（含非法 hid
     assert.equal(badHidden.out.status, 400)
     assert.match(String(badHidden.out.payload.message), /closeout/)
 
-    assert.deepEqual(loadConfig(file).buttons, [{ label: '旧', text: '旧' }])
+    assert.deepEqual(loadConfig(file).buttons, [{ label: '旧', text: '旧', mode: 'send' }])
   })
 })
 

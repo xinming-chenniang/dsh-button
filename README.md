@@ -63,7 +63,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 > ① 点「自定义」格里自己配的按钮，把配置的文字填进当前会话并提交（标签如「收尾」「知识库」）；
 > ② 点「重发上一条」把最后一条**真人**用户消息原样再发一条。
 > **状态**：**可用（2026-10-23 v1.2.3 发布；2026-10-24 工作树新增「直接发送 / 填入输入框 + ↑↓ 排序」，
-> 未发布；离线 41 例全过）**。
+> 未发布；离线 43 例全过）**。
 > **处置**：保留（插件源码统一根下的 `dsh-button/`，**git 仓库**，历史可回滚；
 > desktop profile 以 `link:` 指向它）。
 > **关联**：本机收尾工具 `sessions-closeout.mjs`（「收尾」自定义按钮常配的那条命令）·
@@ -159,6 +159,15 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 `↑` / `↓`（只在本区内换位，首条 / 末条自动置灰）→ **方式下拉**（直接发送 / 填入）→
 `×` 删除（预设则是「删除 / 恢复」）。每区底部各有「＋ 添加一条」，新行沿用本区的方式。
 改某行的方式下拉，这一条会立刻挪到另一区。
+
+**悬浮提示（2026-10-24 定稿）**：尽量短。
+
+- 自定义按钮：只显示**要发送/填入的文字预览**（超过 120 字截断），不再加「直接发送 / 填入输入框」前缀
+  —— 点法看边框（填入 = 虚线）和编辑器里的方式下拉。
+- 继续：和自定义按钮**同一条规则** —— 只显示会发出去的文字（默认就是「继续」；改过文字就是改后的文字）。
+- 「重发上一条」是唯一例外（内容是动态的），暂未并入这套规则（等第三类「脚本」动作一起定）。
+- 编辑器里的控件用说明性短句（上移 / 删除这条 / 保存到配置文件…），预设的删除 / 恢复带上当前标签；
+  方式下拉只说「点一下做什么」，不再重复两种方式的名字。
 
 保存即落盘。**顺序 = 配置里的数组顺序**：↑↓ 只跟本区的邻居换位（自动跳过另一区的行），
 保存后输入框旁那排按钮立刻按新顺序排；手写 JSON 时同样按 `buttons` 数组顺序显示。
@@ -266,7 +275,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 ## 自检
 
 ```powershell
-node --test test/client.test.mjs   # 27 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态 / 填入 / 分区编辑 / 排序 / portal
+node --test test/client.test.mjs   # 29 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态 / 填入 / 分区编辑 / 排序 / portal / 悬浮提示
 node --test test/buttons.test.mjs  # 14 例：默认按钮 / 配置与 hidden / presets / mode 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
 node --check lib/client.js
 node --check lib/index.js
@@ -277,7 +286,7 @@ node --check lib/buttons.js
 
 | DSH 版本 | 结果 |
 |---|---|
-| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 41/41；宿主输入门面带 `caretSpan` / `insertText`（填入走它） |
+| `0.2.1-rc.2` | 已测：插件 active，`/api/dsh-button/buttons` 返回 200；`npm test` 43/43；宿主输入门面带 `caretSpan` / `insertText`（填入走它） |
 | 其他版本 | 未测；`package.json` 只声明 `engines.dsh >= 0.2.0-rc.2`；更旧的宿主没有 `insertText` 时，填入退回追加到草稿末尾 |
 
 ## 已知边界

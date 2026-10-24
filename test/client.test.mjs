@@ -447,7 +447,7 @@ test('自定义按钮：读到配置后渲染成按钮，点击发配置里的�
     const button = findByClass(tree, 'dsh-custom-action')
     assert.ok(button, '应当渲染配置里的自定义按钮')
     assert.equal(button.children[0], '知识库')
-    assert.equal(button.props.title, '用 knowledge-base 查我的体检')
+    assert.equal(button.props.title, '用 knowledge-base 查我的体检', '悬浮提示只放文字预览，不再加方式前缀')
     button.props.onClick()
     assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '用 knowledge-base 查我的体检'], ['submit']])
     assert.ok(findByClass(tree, 'dsh-custom-manage'), '「＋」入口应当常驻')
@@ -507,7 +507,7 @@ test('预设读取配置：继续的标签与发送文字都来自配置（remou
       ok: true,
       buttons: [],
       hidden: [],
-      presets: { continue: { label: '继续吧', text: '继续吧' } },
+      presets: { continue: { label: '继续吧', text: '继续文字' } },
     }),
   })
   try {
@@ -519,8 +519,9 @@ test('预设读取配置：继续的标签与发送文字都来自配置（remou
     const inner = seat.children[0].type
     const button = findByClass(inner(), 'dsh-continue-action')
     assert.equal(button.children[0], '继续吧', '按钮文字应来自配置的 preset.continue.label')
+    assert.equal(button.props.title, '继续文字', '悬浮提示和自定义按钮一样，只显示会发出去的文字（不是标签）')
     button.props.onClick()
-    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续吧'], ['submit']])
+    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续文字'], ['submit']])
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -661,7 +662,7 @@ test('继续：配置成「填入」时点一下只填光标处，不提交', as
     await new Promise((resolve) => setTimeout(resolve, 0))
     const button = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
     assert.equal(button.props.style.borderStyle, 'dashed', '填入类按钮用虚线边区分')
-    assert.match(String(button.props.title), /填入/)
+    assert.equal(button.props.title, '继续')
     button.props.onClick()
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
       ['insertText', '继续', { start: 2, end: 2, draftRev: 3 }],
@@ -697,7 +698,7 @@ test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提�
     const insertButton = findAllWithClassToken(tree, 'dsh-custom-action-insert')[0]
     assert.ok(insertButton, '插入类自定义按钮应当有自己的 class')
     assert.equal(insertButton.children[0], '模板')
-    assert.match(String(insertButton.props.title), /填入/)
+    assert.equal(insertButton.props.title, '模板文字', '悬浮提示只放要填入的文字')
     insertButton.props.onClick()
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
       ['insertText', '模板文字', { start: 0, end: 0, draftRev: 2 }],
@@ -871,5 +872,83 @@ test('编辑器浮层 portal 到 body：不再被宿主「回到底部」浮动�
     globalThis.fetch = prevFetch
     if (prevDocument === undefined) delete globalThis.document
     else globalThis.document = prevDocument
+  }
+})
+
+test('悬浮提示只放文字预览（不显示「直接发送 / 填入输入框」）；继续保留短句、重发不动', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const longText = '长'.repeat(200)
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '甲', text: '发送用的文字' },
+        { label: '乙', text: longText, mode: 'insert' },
+      ],
+      hidden: [],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const cont = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
+    assert.equal(cont.props.title, '继续', '继续与自定义按钮同一规则：只显示会发出去的文字')
+    assert.doesNotMatch(String(cont.props.title), /直接发送|填入输入框/)
+
+    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
+    const tree = registration.component().children[0].type()
+    const sendButton = findByClass(tree, 'dsh-custom-action')
+    assert.equal(sendButton.props.title, '发送用的文字', '自定义按钮只显示文字预览')
+    assert.equal(sendButton.props['aria-label'], sendButton.props.title, 'title 与 aria-label 同句')
+
+    const insertButton = findAllWithClassToken(tree, 'dsh-custom-action-insert')[0]
+    assert.equal(insertButton.props.title, `${'长'.repeat(120)}…`, '填入类也只显示截断后的文字')
+    assert.ok(insertButton.props.title.length < longText.length, '长文字预览必须截断')
+    assert.doesNotMatch(String(insertButton.props.title), /填入输入框/)
+    assert.equal(findByClass(tree, 'dsh-custom-manage').props.title, '编辑动作按钮（可改方式、排序、删除）')
+
+    // 重发先不管：保留旧规则，记录现状
+    const resend = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
+    assert.match(String(resend.props.title), /^重发上一条：/)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前标签', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: [], presets: {} }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountCustomActions(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const titleOf = (node) => String(node?.props?.title ?? '')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-save')), '保存到配置文件')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-cancel')), '放弃修改')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-close')), '关闭编辑器')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-send')), '添加一条（发送）')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-insert')), '添加一条（填入）')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-remove')), '删除这条')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-mode')), '点一下做什么')
+
+    const removeContinue = findAllByClass(mounted.tree, 'dsh-custom-preset-remove')[0]
+    assert.equal(titleOf(removeContinue), '从按钮条移除「继续」')
+    removeContinue.props.onClick()
+    assert.equal(titleOf(findAllByClass(mounted.tree, 'dsh-custom-preset-restore')[0]), '恢复「继续」')
+  } finally {
+    globalThis.fetch = prevFetch
   }
 })

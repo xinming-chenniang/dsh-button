@@ -1,6 +1,8 @@
 # dsh-button —— 输入框那一排的动作（独立插件）
 
-![输入框旁的按钮：继续 / 自定义 / 重发上一条](assets/composer-buttons.png)
+![输入框上方的动作行：继续 / 自定义 / 重发上一条（旧版截图）](assets/composer-buttons.png)
+
+> 截图是 1.2 版（按钮还在输入框旁）；1.3 起整行移到输入框上方，发布前补新图。
 
 > **English** — One-click composer actions for DeepSeek Harness: **Continue**, custom text buttons,
 > and **Resend last message**. Text-only: it types and submits text, runs no host commands, and
@@ -8,7 +10,7 @@
 
 ## 快速开始
 
-点输入框旁的三类按钮：
+点输入框上方的三类动作：
 
 | 按钮 | 作用 |
 |---|---|
@@ -170,7 +172,7 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
   方式下拉只说「点一下做什么」，不再重复两种方式的名字。
 
 保存即落盘。**顺序 = 配置里的数组顺序**：↑↓ 只跟本区的邻居换位（自动跳过另一区的行），
-保存后输入框旁那排按钮立刻按新顺序排；手写 JSON 时同样按 `buttons` 数组顺序显示。
+保存后输入框上方那行动作立刻按新顺序排；手写 JSON 时同样按 `buttons` 数组顺序显示。
 **不需要记格式、不用写 `=`**：只填一半的行才会报错并指明第几条；两栏都空的行自动跳过。
 上限 **8 条**；标签 ≤ 12 字、文字 ≤ 500 字、标签不能换行（文字可以多行）。保存走
 `POST /api/dsh-button/buttons`，读取走 `GET` 同路径；两者都只接受 loopback + 同源。
@@ -207,31 +209,26 @@ GitHub 源：`dsh plugin --profile <profile> add github:xinming-chenniang/dsh-bu
 | 填并提交 | `ctx.get('conversation').input.for(scope).setDraft(text)` + `.submit()` | `@anionex/dsh-turn-rewind`、`dsh-better-sidebar` |
 | 插入到光标处 | 同一门面的 `caretSpan()` → `{start,end}`，配 `snapshot.draftRev` 调 `insertText(text, span)` | `@deepseek-ai/dsh-client-ui-conversation` 的 `SessionInputShell`（`/` 斜杠菜单插入走同一条路径） |
 
-## 落点（两个插槽、三个格子）
+## 落点（输入框上方一行，左右两组）
 
 `lib/client.js` 顶部：
 
 ```js
-const SLOT_CONTINUE = 'conversation.input.left'   // 继续：输入框左侧工具区，order 4（最左）
-const SLOT_CUSTOM   = 'conversation.input.left'   // 自定义按钮：同一个插槽，order 5（一格平铺 N 个）
-const SLOT_RESEND   = 'conversation.input.right'  // 重发：主发送/暂停键左侧那一排，order 5
+const SLOT_ACTIONS = 'conversation.input.dock'  // 输入框上方，和待办/队列同一块
+const ORDER_ACTIONS = 10
+const ID_ACTIONS = 'dsh-button:actions'
 ```
 
-同一个 `list` 插槽里放多个按钮 = **多个格子**，所以每个都必须用自己的 id：
-`dsh-button:continue`（继续）、`dsh-button:custom`（自定义）。
-复用别人的 id 会顶掉那个格子
-（宿主插槽目录的原话：*reusing a shipped id puts you in THAT cell and replaces it*）。
-实测两种写法的差别就是"两个按钮"还是"一个按钮"—— `test/client.test.mjs` 里有专门断言。
+宿主把 `conversation.input.dock` 渲染在 composer 卡片的**前面**（`composerStack` 里，待办 order 0、
+队列 order 20），所以整行固定在输入框上方；我们用 order 10 插在两者之间。
 
-`conversation.input.right` 是宿主 `conversation.composer.bar` 声明的 `list` 插槽，与模型选择、
-activity、主键同处输入框右下，列表顺序由 `order` 决定。
+这一行是**一个插槽格**，里面再分左右：
 
-| 想放哪 | 改成 | 是否已被装机插件验证 |
-|---|---|---|
-| 输入框左侧（继续 + 自定义默认） | `conversation.input.left` | ✅ 宿主 `composer bar` 的 list 插槽 |
-| 发送/暂停键旁（重发默认） | `conversation.input.right` | ✅ 同上；紧邻主键 |
-| 左侧栏底部 | `sidebar.footer.action` | ✅ `dsh-plugin-restart` / `dsh-session-manager` |
-| 会话标题栏右侧 | `conversation.session.header.actions` | ✅ `dsh-turn-rewind` / `dsh-session-manager` |
+- **左组**：所有 `mode: insert` 的动作（对着输入框的附件键）；
+- **右组**：所有 `mode: send` 的动作 + 「＋」编辑器入口（对着发送键）。
+
+这样输入框的控件行只留附件、权限、模型和发送键，模型名不再被按钮挤掉。
+预设的隐藏由行内过滤（不再注销插槽格子），所以整行只注册一次、也只有一个 id。
 
 改完要**重装/重启**（客户端模块是启动时快照）。
 
@@ -275,7 +272,7 @@ dsh plugin --profile web add github:xinming-chenniang/dsh-button
 ## 自检
 
 ```powershell
-node --test test/client.test.mjs   # 29 例：三格 / 预设删除与改名 / 继续 / 自定义 / 重发 / 禁用态 / 填入 / 分区编辑 / 排序 / portal / 悬浮提示
+node --test test/client.test.mjs   # 29 例：动作行 / 左右分组 / 预设隐藏 / 继续 / 自定义 / 重发 / 填入 / 分区编辑 / 排序 / portal / 悬浮提示
 node --test test/buttons.test.mjs  # 14 例：默认按钮 / 配置与 hidden / presets / mode 校验 / 读 / 原子写 / GET+POST 路由 / 安全边界
 node --check lib/client.js
 node --check lib/index.js

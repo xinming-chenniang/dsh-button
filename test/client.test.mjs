@@ -18,9 +18,7 @@ const CLIENT = join(HERE, '..', 'lib', 'client.js')
 /** 包名是这些 id 的唯一来源：改名时断言跟着它走，源码漏改就 FAIL。 */
 const PKG = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8'))
 
-const SLOT_CONTINUE = 'conversation.input.left'
-const SLOT_CUSTOM = 'conversation.input.left'
-const SLOT_RESEND = 'conversation.input.right'
+
 
 /** 最小的 React 替身：createElement 记形状，useState 取初值（支持惰性初始化函数）。 */
 const fakeReact = {
@@ -203,29 +201,29 @@ function mountComponent(Component) {
   return { get tree() { return tree }, render }
 }
 
-/** 取某个插槽注册出来的按钮元素：先按插槽筛，再按 class 认。 */
-function buttonAt(ctx, slot, className) {
-  const candidates = ctx.registrations.filter((item) => item.options.name === slot)
-  assert.ok(candidates.length > 0, `应当注册到 ${slot}`)
-  for (const registration of candidates) {
-    const seat = registration.component()
-    const inner = seat.children[0].type
-    const button = findByClass(inner(), className)
-    if (button) return button
-  }
-  assert.fail(`${slot} 里找不到 ${className} 按钮`)
+/** 动作行（整行一个插槽格）的注册项。 */
+function dockRegistration(ctx) {
+  const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:actions`)
+  assert.ok(registration, '应当注册动作行（dsh-button:actions）')
+  return registration
 }
 
-/** 挂载自定义按钮那一格组件（带 hooks 运行时）。 */
-function mountCustomActions(ctx) {
-  const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
-  assert.ok(registration, '应当注册自定义按钮那一格')
-  const seat = registration.component()
-  const CustomActions = seat.children[0].type
-  return mountComponent(CustomActions)
+/** 挂载动作行组件（带 hooks 运行时）。 */
+function mountDock(ctx) {
+  const seat = dockRegistration(ctx).component()
+  const Dock = seat.children[0].type
+  return mountComponent(Dock)
 }
 
-test('插件对象形状：名字、注入面、三格分别注册到两个插槽', async () => {
+/** 挂载一次动作行并取某个按钮（测试用；每次调用是新的组件实例）。 */
+function dockButton(ctx, className) {
+  const mounted = mountDock(ctx)
+  const button = findByClass(mounted.tree, className)
+  assert.ok(button, `动作行里找不到 ${className}`)
+  return button
+}
+
+test('插件对象形状：名字、注入面、动作行只注册一格（输入框上方）', async () => {
   const plugin = await loadPlugin()
   assert.equal(plugin.name, PKG.name)
   assert.ok(plugin.inject.includes('slots'), 'inject 必须含 slots')
@@ -234,17 +232,12 @@ test('插件对象形状：名字、注入面、三格分别注册到两个插�
 
   const ctx = makeCtx()
   plugin.apply(ctx)
-  assert.equal(ctx.registrations.length, 3, '应当注册三格（继续 + 自定义 + 重发）')
-  const left = ctx.registrations.filter((item) => item.options.name === SLOT_CUSTOM)
-  assert.equal(left.length, 2, '输入框左侧应当有两个动作：继续 + 自定义')
-  assert.deepEqual(left.map((item) => item.options.order), [4, 5], '继续最左，自定义其次')
-  const leftIds = left.map((item) => item.options.id)
-  assert.equal(new Set(leftIds).size, 2, `同一个插槽里的格子键必须互不相同（复用 id = 顶掉别人的格子）：${JSON.stringify(leftIds)}`)
-  assert.equal(ctx.registrations.find((item) => item.options.name === SLOT_RESEND)?.options.id, PKG.name)
-  assert.equal(left[0].options.id, `${PKG.name}:continue`, '继续那一格必须用自己的键')
-  assert.equal(left[1].options.id, `${PKG.name}:custom`, '自定义按钮那一格必须用自己的键')
-  assert.ok(!left.some((item) => item.options.id === `${PKG.name}:suggest`), '按建议执行已合并，不应再有它')
-  assert.ok(!left.some((item) => item.options.id === `${PKG.name}:panel`), '收口已删除，不应再有面板格子')
+  assert.equal(ctx.registrations.length, 1, '只应注册一格（整行动作）')
+  const [reg] = ctx.registrations
+  assert.equal(reg.options.name, 'conversation.input.dock', '动作行放在输入框上方的 dock')
+  assert.equal(reg.options.id, `${PKG.name}:actions`)
+  assert.equal(reg.options.order, 10)
+  assert.ok(!ctx.registrations.some((item) => item.options.id === `${PKG.name}:suggest`), '按建议执行已合并，不应再有它')
 })
 
 test('继续：点击＝把「继续」填进当前会话并提交', async () => {
@@ -253,7 +246,7 @@ test('继续：点击＝把「继续」填进当前会话并提交', async () =>
   const ctx = makeCtx({ calls })
   plugin.apply(ctx)
 
-  const button = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
+  const button = dockButton(ctx, 'dsh-continue-action')
   assert.equal(button.props.disabled, false, '有当前会话时继续可用')
   button.props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
@@ -265,7 +258,7 @@ test('有草稿时按钮不覆盖、不提交', async () => {
   const ctx = makeCtx({ calls, draft: '我正在写的草稿' })
   plugin.apply(ctx)
 
-  buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.onClick()
+  dockButton(ctx, 'dsh-continue-action').props.onClick()
   assert.deepEqual(calls, [['for', 'session-test']], `有草稿时只应读取 input，不应 setDraft/submit：${JSON.stringify(calls)}`)
 })
 
@@ -290,7 +283,7 @@ test('重发上一条：取最后一条真人消息的文本，覆盖草稿并�
   })
   plugin.apply(ctx)
 
-  const button = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
+  const button = dockButton(ctx, 'dsh-resend-action')
   assert.equal(button.props.disabled, false, '有上一条用户消息时可用')
   button.props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '上一条消息'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
@@ -309,7 +302,7 @@ test('重发跳过注入消息（source.kind 不是 user），且按 seq 取最�
   })
   plugin.apply(ctx)
 
-  const button = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
+  const button = dockButton(ctx, 'dsh-resend-action')
   assert.equal(button.props.disabled, false)
   button.props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '真人说的'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
@@ -321,7 +314,7 @@ test('重发兼容裸字符串 content', async () => {
   const ctx = makeCtx({ calls, entries: [userMessage(1, '裸文本消息')] })
   plugin.apply(ctx)
 
-  buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action').props.onClick()
+  dockButton(ctx, 'dsh-resend-action').props.onClick()
   assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '裸文本消息'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
@@ -331,11 +324,11 @@ test('没有打开的会话：动作按钮都禁用，点击不提交；「＋�
   const ctx = makeCtx({ calls, byId: {} })
   plugin.apply(ctx)
 
-  const cont = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
-  const resend = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
+  const cont = dockButton(ctx, 'dsh-continue-action')
+  const resend = dockButton(ctx, 'dsh-resend-action')
   assert.equal(cont.props.disabled, true)
   assert.equal(resend.props.disabled, true)
-  assert.notEqual(buttonAt(ctx, SLOT_CUSTOM, 'dsh-custom-manage').props.disabled, true, '编辑入口不依赖会话')
+  assert.notEqual(dockButton(ctx, 'dsh-custom-manage').props.disabled, true, '编辑入口不依赖会话')
 
   cont.props.onClick()
   resend.props.onClick()
@@ -348,8 +341,8 @@ test('只有注入消息、没有真人消息：重发禁用，继续仍可用',
   const ctx = makeCtx({ calls, entries: [userMessage(3, '注入内容', 'agent-instructions')] })
   plugin.apply(ctx)
 
-  assert.equal(buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action').props.disabled, true)
-  assert.equal(buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.disabled, false)
+  assert.equal(dockButton(ctx, 'dsh-resend-action').props.disabled, true)
+  assert.equal(dockButton(ctx, 'dsh-continue-action').props.disabled, false)
 })
 
 test('老宿主留下的 state.current 仍然优先（两份取值路径都要活）', async () => {
@@ -364,7 +357,7 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
   })
   plugin.apply(ctx)
 
-  buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action').props.onClick()
+  dockButton(ctx, 'dsh-continue-action').props.onClick()
   assert.deepEqual(calls, [['for', 'session-a'], ['setDraft', '继续'], ['submit']], `实际调用：${JSON.stringify(calls)}`)
 })
 
@@ -401,7 +394,7 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send' }] })
 })
 
-test("删掉的预设真的从插槽移除（hidden=['continue']）", async () => {
+test("删掉的预设不渲染（hidden=['continue']），重发仍在", async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -412,12 +405,10 @@ test("删掉的预设真的从插槽移除（hidden=['continue']）", async () =
   })
   try {
     plugin.apply(ctx)
-    // apply 先全注册（2 预设 + 自定义 = 3）；配置到达后按 hidden 注销。
-    assert.equal(ctx.registrations.length, 3)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(ctx.registrations.length, 2, `实际：${JSON.stringify(ctx.registrations.map((r) => r.options.id))}`)
-    assert.ok(!ctx.registrations.some((item) => item.options.id === `${PKG.name}:continue`), '继续那一格应被移除')
-    assert.ok(ctx.registrations.some((item) => item.options.id === PKG.name), '重发仍应在')
+    const mounted = mountDock(ctx)
+    assert.equal(findByClass(mounted.tree, 'dsh-continue-action'), null, '继续应当被隐藏')
+    assert.ok(findByClass(mounted.tree, 'dsh-resend-action'), '重发仍应在')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -435,15 +426,9 @@ test('自定义按钮：读到配置后渲染成按钮，点击发配置里的�
   })
   try {
     plugin.apply(ctx)
-    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
-    assert.ok(registration, '应当注册一格自定义按钮')
-    // 先真正执行一次组件（发起配置请求），等它落地后再渲染一次：
-    // 真实 React 里由 setState 驱动重渲染，这里手动重跑。
-    registration.component().children[0].type()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const seat = registration.component()
-    const inner = seat.children[0].type
-    const tree = inner()
+    const mounted = mountDock(ctx)
+    const tree = mounted.tree
     const button = findByClass(tree, 'dsh-custom-action')
     assert.ok(button, '应当渲染配置里的自定义按钮')
     assert.equal(button.children[0], '知识库')
@@ -463,13 +448,10 @@ test('自定义按钮：配置为空时只渲染「＋」入口，不渲染任�
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, buttons: [] }) })
   try {
     plugin.apply(ctx)
-    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
-    const seat = registration.component()
-    const inner = seat.children[0].type
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const tree = inner()
-    assert.equal(findByClass(tree, 'dsh-custom-action'), null)
-    assert.ok(findByClass(tree, 'dsh-custom-manage'))
+    const mounted = mountDock(ctx)
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-action'), null)
+    assert.ok(findByClass(mounted.tree, 'dsh-custom-manage'))
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -513,11 +495,8 @@ test('预设读取配置：继续的标签与发送文字都来自配置（remou
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:continue`)
-    assert.ok(registration, '继续应当仍在插槽里（hidden 为空）')
-    const seat = registration.component()
-    const inner = seat.children[0].type
-    const button = findByClass(inner(), 'dsh-continue-action')
+    const mounted = mountDock(ctx)
+    const button = findByClass(mounted.tree, 'dsh-continue-action')
     assert.equal(button.children[0], '继续吧', '按钮文字应来自配置的 preset.continue.label')
     assert.equal(button.props.title, '继续文字', '悬浮提示和自定义按钮一样，只显示会发出去的文字（不是标签）')
     button.props.onClick()
@@ -566,10 +545,7 @@ test('自定义按钮：编辑器里 ↑↓ 手动调整顺序，保存后按新
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
-    const seat = registration.component()
-    const CustomActions = seat.children[0].type
-    const mounted = mountComponent(CustomActions)
+    const mounted = mountDock(ctx)
     const labelsOf = () => findAllByClass(mounted.tree, 'dsh-custom-label-input').map((input) => input.props.value)
 
     // 点「＋」打开编辑器：行序 = 配置数组顺序
@@ -660,7 +636,7 @@ test('继续：配置成「填入」时点一下只填光标处，不提交', as
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const button = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
+    const button = dockButton(ctx, 'dsh-continue-action')
     assert.equal(button.props.style.borderStyle, 'dashed', '填入类按钮用虚线边区分')
     assert.equal(button.props.title, '继续')
     button.props.onClick()
@@ -692,9 +668,8 @@ test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提�
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
-    const inner = registration.component().children[0].type
-    const tree = inner()
+    const mounted = mountDock(ctx)
+    const tree = mounted.tree
     const insertButton = findAllWithClassToken(tree, 'dsh-custom-action-insert')[0]
     assert.ok(insertButton, '插入类自定义按钮应当有自己的 class')
     assert.equal(insertButton.children[0], '模板')
@@ -740,7 +715,7 @@ test('编辑器：动作按「直接发送 / 填入输入框」两区分开；�
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountCustomActions(ctx)
+    const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
     const sendSection = () => findByClass(mounted.tree, 'dsh-section-send')
@@ -783,7 +758,7 @@ test('编辑器：改方式会把这条移到另一区；每区的「添加一�
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountCustomActions(ctx)
+    const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
     // 填入区一开始只有预设置位（这里预设都是直接发送，所以没有行）
@@ -823,7 +798,7 @@ test('编辑器：↑↓ 只在同区内换位（跳过另一区的行）', asyn
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountCustomActions(ctx)
+    const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
     const labelsOf = (section) => findAllWithClassToken(section, 'dsh-custom-label-input').map((input) => input.props.value)
@@ -860,7 +835,7 @@ test('编辑器浮层 portal 到 body：不再被宿主「回到底部」浮动�
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountCustomActions(ctx)
+    const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
     const portal = findByType(mounted.tree, 'portal')
@@ -896,12 +871,12 @@ test('悬浮提示只放文字预览（不显示「直接发送 / 填入输入�
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const cont = buttonAt(ctx, SLOT_CONTINUE, 'dsh-continue-action')
+    const mounted = mountDock(ctx)
+    const tree = mounted.tree
+    const cont = findByClass(tree, 'dsh-continue-action')
     assert.equal(cont.props.title, '继续', '继续与自定义按钮同一规则：只显示会发出去的文字')
     assert.doesNotMatch(String(cont.props.title), /直接发送|填入输入框/)
 
-    const registration = ctx.registrations.find((item) => item.options.id === `${PKG.name}:custom`)
-    const tree = registration.component().children[0].type()
     const sendButton = findByClass(tree, 'dsh-custom-action')
     assert.equal(sendButton.props.title, '发送用的文字', '自定义按钮只显示文字预览')
     assert.equal(sendButton.props['aria-label'], sendButton.props.title, 'title 与 aria-label 同句')
@@ -913,7 +888,7 @@ test('悬浮提示只放文字预览（不显示「直接发送 / 填入输入�
     assert.equal(findByClass(tree, 'dsh-custom-manage').props.title, '编辑动作按钮（可改方式、排序、删除）')
 
     // 重发先不管：保留旧规则，记录现状
-    const resend = buttonAt(ctx, SLOT_RESEND, 'dsh-resend-action')
+    const resend = findByClass(tree, 'dsh-resend-action')
     assert.match(String(resend.props.title), /^重发上一条：/)
   } finally {
     globalThis.fetch = prevFetch
@@ -932,7 +907,7 @@ test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前�
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountCustomActions(ctx)
+    const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
     const titleOf = (node) => String(node?.props?.title ?? '')

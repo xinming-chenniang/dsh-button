@@ -46,7 +46,10 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
-    "assets"
+    "assets/hero-light.png",
+    "assets/settings-panel.png",
+    "assets/skin-official-light.png",
+    "assets/skin-official-dark.png"
   ],
   "keywords": [
     "dsh",

@@ -8,7 +8,7 @@
 |---|---|
 | ![官方默认浅色主题下的动作行：⋮、讨论/说明、总结/继续](assets/skin-official-light.png) | ![官方默认深色主题下的动作行](assets/skin-official-dark.png) |
 | **示例皮肤 · 浅色** | **示例皮肤 · 深色** |
-| ![示例皮肤浅色主题下的动作行](assets/skin-light.png) | ![示例皮肤深色主题下的动作行](assets/skin-dark.png) |
+| ![示例皮肤浅色主题下的动作行](https://raw.githubusercontent.com/xinming-chenniang/dsh-button/main/assets/skin-light.png) | ![示例皮肤深色主题下的动作行](https://raw.githubusercontent.com/xinming-chenniang/dsh-button/main/assets/skin-dark.png) |
 
 > 同一套按钮在官方默认和示例皮肤、浅色和深色下位置和行为都不变。
 > 左侧虚线是「填入」类按钮，右侧实底是「发送」类按钮。

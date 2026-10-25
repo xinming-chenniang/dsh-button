@@ -1255,3 +1255,69 @@ test('设置面板可拖动：标题栏拖拽改 left/top 并记住；双击复�
     else globalThis.localStorage = prevStorage
   }
 })
+
+test('第一次拖动后浮出「双击可复位」提示：每次打开只提示一次，未移动不提示', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevStorage = globalThis.localStorage
+  const store = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => (key === 'dsh-button:layout' ? 'below' : (store.get(key) ?? null)),
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  }
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }),
+  })
+  const drag = (header, from, to) => {
+    header.props.onPointerDown({
+      button: 0,
+      clientX: from[0],
+      clientY: from[1],
+      pointerId: 1,
+      target: { tagName: 'STRONG' },
+      currentTarget: {
+        parentElement: { getBoundingClientRect: () => ({ left: 200, top: 300, width: 600, height: 400 }) },
+        setPointerCapture() {},
+      },
+      preventDefault() {},
+    })
+    if (to !== null) header.props.onPointerMove({ clientX: to[0], clientY: to[1], pointerId: 1 })
+    header.props.onPointerUp()
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-drag-hint'), null, '还没拖动时没有提示')
+
+    // 只按下不移动：不算拖动，不提示
+    drag(findByClass(mounted.tree, 'dsh-custom-editor-header'), [10, 10], null)
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-drag-hint'), null, '没有移动就不提示')
+
+    // 真的拖一次：提示出现
+    drag(findByClass(mounted.tree, 'dsh-custom-editor-header'), [10, 10], [60, 40])
+    const hint = findByClass(mounted.tree, 'dsh-editor-drag-hint')
+    assert.ok(hint, '第一次拖动后浮出提示')
+    assert.equal(hint.children[0], '双击标题栏可复位')
+
+    // 同一轮里再拖：不重复弹
+    drag(findByClass(mounted.tree, 'dsh-custom-editor-header'), [20, 20], [70, 50])
+    assert.equal(findAllByClass(mounted.tree, 'dsh-editor-drag-hint').length, 1, '每次打开只提示一次')
+
+    // 关掉再打开：提示重置，再拖会重新提示
+    findByClass(mounted.tree, 'dsh-custom-editor-backdrop').props.onClick()
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-drag-hint'), null, '重新打开后提示重置')
+    drag(findByClass(mounted.tree, 'dsh-custom-editor-header'), [10, 10], [40, 30])
+    assert.ok(findByClass(mounted.tree, 'dsh-editor-drag-hint'), '重新打开后的第一次拖动再次提示')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})

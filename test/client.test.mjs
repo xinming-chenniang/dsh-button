@@ -331,36 +331,37 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
 test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、上限与长度校验）', async () => {
   const plugin = await loadPlugin()
   const { blankCustomRow, validateCustomRows, MAX_CUSTOM } = plugin.__internals
-  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send', style: 'secondary', icon: '', side: 'right' })
-  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert', style: 'ghost', icon: '', side: 'left' })
+  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send', style: 'secondary', side: 'right' })
+  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert', style: 'ghost', side: 'left' })
   // 位置显式指定时以它为准（位置与动作解耦：左侧也可以是发送按钮）
-  assert.deepEqual(blankCustomRow('send', 'left'), { label: '', text: '', mode: 'send', style: 'secondary', icon: '', side: 'left' })
+  assert.deepEqual(blankCustomRow('send', 'left'), { label: '', text: '', mode: 'send', style: 'secondary', side: 'left' })
   // 空行直接跳过，不要求用户自己删干净
   assert.deepEqual(validateCustomRows([
     { label: ' 收尾 ', text: ' 收尾 ' },
     blankCustomRow(),
   ]), {
     ok: true,
-    buttons: [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '', side: 'right' }],
+    buttons: [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', side: 'right' }],
   })
   // mode 原样带上（编辑器按位置分区，位置与动作解耦）
   assert.deepEqual(validateCustomRows([{ label: '模板', text: 'x', mode: 'insert' }]), {
     ok: true,
-    buttons: [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', icon: '', side: 'left' }],
+    buttons: [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', side: 'left' }],
   })
-  // 外观与图标原样带上；非法图标在编辑器里就拦下
-  assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', icon: '🏁', style: 'primary' }]), {
+  // 外观原样带上；旧的 icon 字段已删除，行里带了也忽略
+  assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', style: 'primary' }]), {
     ok: true,
-    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'primary', icon: '🏁', side: 'right' }],
+    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'primary', side: 'right' }],
+  })
+  assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', icon: '🏁' }]), {
+    ok: true,
+    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'secondary', side: 'right' }],
   })
   // 位置显式指定时原样带上，与 mode 解耦（左侧的发送按钮合法）
   assert.deepEqual(validateCustomRows([{ label: '左发', text: 'x', side: 'left' }]), {
     ok: true,
-    buttons: [{ label: '左发', text: 'x', mode: 'send', style: 'secondary', icon: '', side: 'left' }],
+    buttons: [{ label: '左发', text: 'x', mode: 'send', style: 'secondary', side: 'left' }],
   })
-  const badIcon = validateCustomRows([{ label: '主', text: 'x', icon: '🏁🏁🏁' }])
-  assert.equal(badIcon.ok, false)
-  assert.match(badIcon.message, /图标/)
   // 只填一半才报错，并指明第几条
   const labelOnly = validateCustomRows([{ label: '只有标签', text: '' }])
   assert.equal(labelOnly.ok, false)
@@ -373,7 +374,7 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   assert.equal(validateCustomRows([{ label: 'a'.repeat(30), text: 'x' }]).ok, false)
   assert.equal(validateCustomRows([{ label: 'a', text: 'x'.repeat(600) }]).ok, false)
   // 不带 "=" 的标签也合法（旧的行格式要求已取消）
-  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send', style: 'secondary', icon: '', side: 'right' }] })
+  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send', style: 'secondary', side: 'right' }] })
 })
 
 test("删掉的预设不渲染（hidden=['continue']），重发仍在", async () => {
@@ -670,8 +671,8 @@ test('编辑器：动作按「左侧 / 右侧」两区分开；保存带上每�
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(posts.length, 1)
     assert.deepEqual(posts[0].buttons, [
-      { label: '甲', text: 'a', mode: 'send', style: 'secondary', icon: '', side: 'right' },
-      { label: '乙', text: 'b', mode: 'insert', style: 'ghost', icon: '', side: 'left' },
+      { label: '甲', text: 'a', mode: 'send', style: 'secondary', side: 'right' },
+      { label: '乙', text: 'b', mode: 'insert', style: 'ghost', side: 'left' },
     ], '每条按钮的位置与方式都要原样落盘')
     assert.deepEqual(posts[0].hidden, ['continue'])
   } finally {
@@ -1233,7 +1234,7 @@ test('按钮大小三档：写 localStorage、加根属性、动作条用 CSS �
   }
 })
 
-test('外观与图标：四种语义样式各自成型，图标显示在标签前', async () => {
+test('外观：四种语义样式各自成型；旧 icon 字段不再渲染', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -1270,10 +1271,10 @@ test('外观与图标：四种语义样式各自成型，图标显示在标签�
     assert.equal(plain.props.style.borderStyle, 'solid', '不写外观时发送类 = 实线')
     assert.match(String(plain.props.style.background), /color-mix/)
     assert.match(String(plain.props.style.borderColor), /color-mix/, '浅底边框跟底色同源（主色淡边），不用全局深边')
-    const withIcon = findAllWithClassToken(tree, 'dsh-custom-action').find((button) => String(button.children[0]).includes('带图'))
-    assert.ok(withIcon, '带图标的按钮应当渲染出来')
-    assert.equal(withIcon.children[0], '🏁 带图', '图标显示在标签前')
-    assert.equal(withIcon.props.style.borderStyle, 'dashed', 'insert 缺省 = 虚线')
+    const legacyIcon = actionByLabel(tree, '带图')
+    assert.ok(legacyIcon, '旧配置里带 icon 的按钮仍应渲染（icon 已被忽略）')
+    assert.equal(legacyIcon.children[0], '带图', '旧 icon 字段不再拼到标签前')
+    assert.equal(legacyIcon.props.style.borderStyle, 'dashed', 'insert 缺省 = 虚线')
     assert.match(String(primary.props.className), /dsh-style-primary/, 'class 上带样式 token')
   } finally {
     globalThis.fetch = prevFetch
@@ -1308,7 +1309,7 @@ test('Ctrl + 点击：填入类直接发送；普通点击仍只填光标处', a
   }
 })
 
-test('编辑器：图标 / 外观控件与实时预览', async () => {
+test('编辑器：外观控件与实时预览', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -1322,17 +1323,12 @@ test('编辑器：图标 / 外观控件与实时预览', async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
-    const iconInput = findByClass(mounted.tree, 'dsh-custom-icon-input')
-    assert.ok(iconInput, '每行应有图标输入框')
-    assert.equal(iconInput.props.value, '')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-icon-input'), null, '图标输入框已删除')
     assert.equal(findByClass(mounted.tree, 'dsh-custom-style').props.value, 'secondary', '每行应有外观下拉')
     const previewOf = () => findAllWithClassToken(mounted.tree, 'dsh-preview-action')
     assert.ok(findByClass(mounted.tree, 'dsh-editor-preview'), '编辑器应有实时预览')
     assert.equal(previewOf().length, 1)
     assert.equal(previewOf()[0].children[0], '甲')
-    // 改图标：预览立即跟着变
-    iconInput.props.onChange({ target: { value: '🏁' } })
-    assert.equal(previewOf()[0].children[0], '🏁 甲', '预览里的按钮带上新图标')
     // 改外观：预览按钮的 class 带新 token
     findByClass(mounted.tree, 'dsh-custom-style').props.onChange({ target: { value: 'danger' } })
     assert.match(String(previewOf()[0].props.className), /dsh-style-danger/, '预览里的外观跟着变')

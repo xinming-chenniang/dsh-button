@@ -2,7 +2,9 @@
 
 在输入框下面加一排自定义按钮：**预设快捷输入**——把反复重打的常用语、提示词存成按钮，点一下填入草稿，或者直接发送。
 
-![官方默认浅色主题下的动作行：⋮ 设置、讨论/说明（虚线，填入）、总结/继续（实底，发送）](assets/hero-light.png)
+按钮可调位置（左 / 右）、可调外观（浅底 / 主色 / 描边 / 警示），每侧超过 6 条自动收进可搜索的「⋯ 全部动作」。
+
+![官方默认浅色主题下的动作行：⋮ 设置、讨论/说明（描边，填入）、总结/继续（实底，发送）](assets/hero-light.png)
 
 | 官方默认 · 浅色 | 官方默认 · 深色 |
 |---|---|
@@ -11,7 +13,7 @@
 | ![示例皮肤浅色主题下的动作行](https://raw.githubusercontent.com/xinming-chenniang/dsh-button/main/assets/skin-light.png) | ![示例皮肤深色主题下的动作行](https://raw.githubusercontent.com/xinming-chenniang/dsh-button/main/assets/skin-dark.png) |
 
 > 同一套按钮在官方默认和示例皮肤、浅色和深色下位置和行为都不变。
-> 左侧虚线是「填入」类按钮，右侧实底是「发送」类按钮。
+> 默认：左侧放「填入」类（描边），右侧放「发送」类（浅底实底）；位置和外观都能在设置里单独改。
 
 ## 安装
 
@@ -23,13 +25,13 @@
 dsh plugin --profile <你的profile> add dsh-button
 ```
 
-从 GitHub 装也可以（钉在已发布的 `v1.3.0`）：
+从 GitHub 装也可以（钉在已发布的 `v1.4.0`）：
 
 ```powershell
-dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.0
+dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.4.0
 ```
 
-`#v1.3.0` 不要省：不钉版本会取仓库的 `main`，那是下一次发版前的代码——版本号仍写 1.3.0，行为和已发布版本不一致。
+`#v1.4.0` 不要省：不钉版本会取仓库的 `main`，那是下一次发版前的代码——版本号仍写 1.4.0，行为和已发布版本不一致。
 
 装完要重启 DSH。客户端插件是启动时加载的，刷新页面不会生效。
 
@@ -37,12 +39,12 @@ dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.
 
 首次安装、还没有配置文件时，自带 4 个按钮：
 
-| 标签 | 预设文字 | 方式 |
-|---|---|---|
-| 总结 | 总结刚才这一轮：做了什么、改了哪些文件、还剩什么 | 发送 |
-| 继续 | 继续 | 发送 |
-| 讨论 | 只讨论，不要进行改动：（并换行） | 填入 |
-| 说明 | 详细说明： | 填入 |
+| 标签 | 预设文字 | 方式 | 位置 | 外观 |
+|---|---|---|---|---|
+| 总结 | 总结刚才这一轮：做了什么、改了哪些文件、还剩什么 | 发送 | 右 | 浅底 |
+| 继续 | 继续 | 发送 | 右 | 浅底 |
+| 讨论 | 只讨论，不要进行改动：（并换行） | 填入 | 左 | 描边 |
+| 说明 | 详细说明： | 填入 | 左 | 描边 |
 
 最左边的 **⋮** 打开设置面板。
 
@@ -51,6 +53,8 @@ dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.
 **发送**：把文字放进输入框并提交。输入框里已经有草稿时不会发送，只提示「有草稿，未发送」，避免覆盖你写了一半的东西。
 
 **填入**：只把文字插到光标处，不提交；有选区就替换选区，没有就插在光标处。多行文字也支持。
+
+**Ctrl + 点击（macOS 上 Cmd + 点击）填入类按钮 = 直接发送**，不用先去设置里把它改成发送类。草稿保护照旧：有草稿就只提示，不会覆盖。
 
 发送恒为排队（宿主 `submit()` 的行为）；手打 Enter 才受「繁忙时的发送行为」设置影响。
 
@@ -66,28 +70,43 @@ dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.
 
 只在执行时解码，编辑框里仍然显示 `\n` 这样的可读写法。建议用反斜杠形式：`/n`、`/t` 是全局替换，写在 `/tmp`、`/node_modules` 这类路径里会被误伤。
 
-### 改按钮
+## 设置面板
 
 点 **⋮** 打开「设置」：
 
-![设置面板：位置、模型开关、按钮大小，以及发送/填入两个区](assets/settings-panel.png)
+![设置面板：可拖动标题栏、左侧/右侧两个区、外观与方式，以及位置/模型/大小](assets/settings-panel.png)
 
-- 每行左边是标签，右边是文字；
-- 「发送 / 填入」是二选一分段，点一下这条会移到另一个区；
-- `↑` / `↓` 调整本区顺序；顺序就是配置文件里的数组顺序；
-- `×` 删除；
-- 每个区标题右边有「添加一条」；
-- 改完点「保存」，或者点面板外面直接关掉（不保存）。
+### 改按钮
 
-上限 8 条。标签最多 12 字，不能换行；文字最多 500 字。
+- 按钮分 **左侧 / 右侧** 两个区；行的顺序就是动作条上的顺序；
+- 每行从左到右：`⠿` 拖动把手、标签、文字、外观下拉、方式（发送 / 填入）、`×`（删除）；
+- 按住 `⠿` 拖动排序，拖到另一侧的分区就换区（插到目标行前、或该区末尾）；
+- 改「发送 / 填入」**不会**换区——位置和动作是两件事；
+- 每个区行列表的下方有「＋ 新按钮」（左对齐文字按钮，hover 才出浅底）；
+- 改完点「保存」，或者点面板外面直接关掉（不保存）；保存失败的原因显示在底部常驻页脚，不会被滚动藏掉。
+
+**拖动面板**：按住标题栏可以拖到任意位置（位置记在浏览器 localStorage），双击标题栏复位；拖过之后会出现 `⟲` 复位按钮，关掉面板再打开位置还在。
+
+### 外观
+
+每条按钮有一个外观（只影响长相，不影响点一下做什么）：
+
+| 外观 | 样子 | 适合 |
+|---|---|---|
+| 浅底（默认） | 主色浅底 + 主色淡边 | 发送类 |
+| 主色 | 主色实底白字 | 最常用的那一条 |
+| 描边（默认） | 透明 + 中性细边、字略淡 | 填入类 |
+| 警示 | 红色系 | 「别点错」的动作 |
+
+外观只取宿主主题变量，深浅色和示例皮肤下自动适配。省略外观时按方式派生（发送 → 浅底、填入 → 描边）。1.3 的填入按钮是虚线，1.4 改成中性描边——虚线在规范里表示「占位 / 未完成」，用在动作按钮上容易被读成没做完。
 
 ### 换位置
 
-设置里的「位置」有三项，切换立即生效：
+设置里的「位置」有三项，切换立即生效（会关闭编辑器，未保存的修改会丢）：
 
 | 位置 | 样子 |
 |---|---|
-| 控制行（默认） | 在输入框那一行，填入靠左、发送靠右 |
+| 控制行（默认） | 在输入框那一行，左右两格分别放左组/右组 |
 | 卡片下方 | 在输入框卡片下面、统计行上面，整行 |
 | 卡片底部 | 在输入框卡片内部底边 |
 
@@ -95,11 +114,11 @@ dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.
 
 ### 调大小
 
-设置里的「按钮大小」有三档：
+设置里的「按钮大小」有三档（高度按 Primer / Fluent 的控件阶梯 24 / 28 / 32 校准）：
 
-- 紧凑 22px
-- 标准 26px
-- 大 30px（默认）
+- 紧凑 24px（左右内边距 8px、字号 12px）
+- 标准 28px（默认；左右内边距 10px、字号 12px）
+- 大 32px（左右内边距 12px、字号 13px、圆角 8px）
 
 只影响动作条按钮；设置面板里的控件保持标准尺寸。选择记在浏览器 localStorage 里，不写配置文件。
 
@@ -108,6 +127,14 @@ dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.
 设置里有一个「模型只显示图标（实验）」开关，**默认开启**：打开后强制模型选择器收起成图标；关掉则交还给宿主自动判断（窄的时候仍可能自动收起）。
 
 它依赖宿主的内部 CSS 变量，DSH 升级后可能失效。失效的表现是模型文字重新出现，不影响按钮功能。
+
+## 容量与搜索
+
+- 上限 **40 条**（标签最多 12 字，不能换行；文字最多 500 字）；
+- 动作条**每侧最多显示 6 条**，超出的收进「⋯ N」入口（N = 两侧合计溢出的条数，入口在左侧末尾）；
+- 点「⋯」打开**全部动作面板**：搜索框按标签和文字过滤（不区分大小写），列出全部动作（包括已经显示在条上的），每条右边标着「发送 / 填入」；
+- 点一条直接执行（Ctrl/Cmd 语义与条上按钮一致），执行后面板关闭；`Esc` 或点面板外关闭；
+- 6 条以内不出现「⋯」，和 1.3 的行为完全一样。
 
 ## 配置
 
@@ -128,21 +155,33 @@ C:\Users\<你>\.dsh\dsh-button\buttons.json
 ```json
 {
   "buttons": [
-    { "label": "总结", "text": "总结刚才这一轮：做了什么、改了哪些文件、还剩什么", "mode": "send" },
-    { "label": "继续", "text": "继续", "mode": "send" },
-    { "label": "讨论", "text": "只讨论，不要进行改动：\\n", "mode": "insert" },
-    { "label": "说明", "text": "详细说明：", "mode": "insert" }
+    { "label": "总结", "text": "总结刚才这一轮：做了什么、改了哪些文件、还剩什么", "mode": "send", "style": "secondary", "side": "right" },
+    { "label": "继续", "text": "继续", "mode": "send", "style": "secondary", "side": "right" },
+    { "label": "讨论", "text": "只讨论，不要进行改动：\\n", "mode": "insert", "style": "ghost", "side": "left" },
+    { "label": "说明", "text": "详细说明：", "mode": "insert", "style": "ghost", "side": "left" }
   ]
 }
 ```
 
-- `mode` 省略就是 `send`。
+字段：
+
+| 字段 | 取值 | 省略时 |
+|---|---|---|
+| `label` | 1–12 字，不能换行 | 必填 |
+| `text` | 1–500 字，可用 `\n` | 必填 |
+| `mode` | `send` / `insert` | `send` |
+| `style` | `secondary` / `primary` / `ghost` / `danger` | 按 `mode` 派生 |
+| `side` | `left` / `right` | 按 `mode` 派生（insert 左、send 右） |
+
 - 在设置里删空并保存，就是真的没有按钮，不会回退默认。
 - 路径可以用环境变量 `DSH_BUTTON_CONFIG` 改。
+- 旧的 `icon` 字段（只存在于未发布的开发分支）读入时会并进标签，保存后不再写回。
 
-### 从 1.2 升级
+### 从旧版本升级
 
-旧配置还能直接读：
+从 **1.3.0** 升级：配置零改动。`style` / `side` 缺省时按 `mode` 派生，外观和位置与 1.3 一模一样。
+
+从 **1.2.x** 升级，旧配置还能直接读：
 
 - `presets.continue` 会并成第一条普通按钮；
 - `hidden: ["continue"]` 仍然表示「这条已经迁移或删掉」，不会再补；
@@ -157,18 +196,20 @@ C:\Users\<你>\.dsh\dsh-button\buttons.json
 - 填入会替换当前选区；宿主太旧、没有 `insertText` 时退回「追加到草稿末尾」，状态会显示「已填入末尾」。
 - 多行填入走宿主 `setDraft`，光标会落在草稿末尾。
 - 控制行用的是公开插槽，最稳；卡片下方/底部依赖宿主 DOM，DSH 改结构后可能要重新适配。
+- 动作条每侧只显示 6 条，「⋯」入口挂在左侧末尾；右侧溢出时也只能从这里打开全部动作。
+- 面板位置、按钮大小、模型开关存在 localStorage，不跨浏览器/设备同步，也不进配置文件。
 - 当前在 DSH `0.2.1-rc.2` 上测过。`package.json` 声明 `engines.dsh >= 0.2.0-rc.2`；更旧的宿主会缺填入 API，按上面的方式降级。
 
 ## 开发
 
 ```powershell
 npm test
-# 47/47：客户端 33 + 宿主 14
+# 62/62
 ```
 
 主要文件：
 
-- `lib/client.js`：按钮条、设置面板、发送/填入；
+- `lib/client.js`：按钮条、设置面板、外观、容量面板、发送/填入；
 - `lib/buttons.js`：配置读写、校验、默认按钮；
 - `lib/index.js`：宿主路由 `/api/dsh-button/buttons`；
 - `test/`：离线用例，不依赖桌面端。
@@ -183,10 +224,10 @@ npm test
 
 ## 变更
 
-看 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.3.0**。
+看 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.4.0**。
 
 问题反馈：[GitHub Issues](https://github.com/xinming-chenniang/dsh-button/issues)。MIT License。
 
 ## English
 
-`dsh-button` adds a row of text actions to the DSH composer. Each button either sends a preset message or inserts it at the caret without sending. Buttons, order, placement, and size are editable from the ⋮ settings panel; nothing else runs.
+`dsh-button` adds a row of text actions to the DSH composer. Each button either sends a preset message or inserts it at the caret without sending; Ctrl/Cmd-click an insert button to send it instead. Buttons can sit on the left or right side, use one of four semantic looks (tint / solid / outline / alert), and up to 40 are supported — beyond 6 per side the rest go into a searchable "⋯ All actions" panel. Order, placement, size, and panel position are editable from the ⋮ settings panel; nothing else runs.

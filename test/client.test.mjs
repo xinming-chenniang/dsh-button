@@ -230,6 +230,11 @@ function mountDock(ctx) {
   return mountComponent(Dock)
 }
 
+/** 等一个任务：拖动落点会推迟到下一个任务提交（避免在 dragend 之前重建被拖行的 DOM）。 */
+function tick() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 /** 挂载一次动作行并取某个按钮（测试用；每次调用是新的组件实例）。 */
 function dockButton(ctx, className) {
   const mounted = mountDock(ctx)
@@ -487,38 +492,145 @@ test('自定义按钮：编辑器里 ↑↓ 手动调整顺序，保存后按新
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
     assert.deepEqual(labelsOf(), ['甲', '乙', '丙'])
 
-    let ups = findAllByClass(mounted.tree, 'dsh-custom-up')
-    let downs = findAllByClass(mounted.tree, 'dsh-custom-down')
-    assert.equal(ups.length, 3, '每条自定义按钮都应有 ↑')
-    assert.equal(ups[0].props.disabled, true, '第一条不能再上移')
-    assert.equal(downs[2].props.disabled, true, '最后一条不能再下移')
-    assert.equal(ups[1].props.disabled, false)
+    const drag = async (from, to) => {
+      findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[from].props.onDragStart({})
+      findAllByClass(mounted.tree, 'dsh-custom-row')[to].props.onDrop({ preventDefault() {}, stopPropagation() {} })
+      await tick()
+    }
+    /** 标签 → React key。key 必须跟着**行对象**走，不能跟着下标走。 */
+    const keyByLabel = () => {
+      const map = {}
+      for (const node of findAllByClass(mounted.tree, 'dsh-custom-row')) {
+        const label = findByClass(node, 'dsh-custom-label-input').props.value
+        map[label] = node.props.key
+      }
+      return map
+    }
+    assert.equal(findAllByClass(mounted.tree, 'dsh-custom-up').length, 0, '↑ 按钮已移除（改成拖动）')
+    assert.equal(findAllByClass(mounted.tree, 'dsh-custom-down').length, 0, '↓ 按钮已移除（改成拖动）')
+    assert.equal(findAllByClass(mounted.tree, 'dsh-custom-side').length, 0, '⇄ 按钮已移除（改成拖动）')
+    const keysBefore = keyByLabel()
 
-    // 乙上移一位 → 乙 甲 丙
-    ups[1].props.onClick()
+    // 把乙拖到甲上 → 乙 甲 丙
+    await drag(1, 0)
     assert.deepEqual(labelsOf(), ['乙', '甲', '丙'])
 
-    // 丙上移一位 → 乙 丙 甲
-    findAllByClass(mounted.tree, 'dsh-custom-up')[2].props.onClick()
-    assert.deepEqual(labelsOf(), ['乙', '丙', '甲'])
+    // 把丙拖到乙上 → 丙 乙 甲
+    await drag(2, 0)
+    assert.deepEqual(labelsOf(), ['丙', '乙', '甲'])
+    // 反例：key 用下标的话这里每一行都换 key → React 会在 dragend 之前重建 DOM，
+    // 拖拽源节点消失，Chrome 的拖影就留在屏幕上（实测「残影」）、原位虚影也没人复位。
+    assert.deepEqual(keyByLabel(), keysBefore, '行 key 跟行对象走：重排不能重建 DOM')
 
-    // 最后一条已到底：直接点也不该越界
-    findAllByClass(mounted.tree, 'dsh-custom-down')[2].props.onClick()
-    assert.deepEqual(labelsOf(), ['乙', '丙', '甲'], '越界的下移应当被忽略')
+    // 拖到自己身上：顺序不变
+    await drag(1, 1)
+    assert.deepEqual(labelsOf(), ['丙', '乙', '甲'], '拖到自己身上不改变顺序')
 
     findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(posts.length, 1, '保存应当只发一次 POST')
-    assert.deepEqual(posts[0].buttons.map((item) => item.label), ['乙', '丙', '甲'], '落盘顺序 = 编辑器行序')
+    assert.deepEqual(posts[0].buttons.map((item) => item.label), ['丙', '乙', '甲'], '落盘顺序 = 编辑器行序')
     assert.deepEqual(
       findAllByClass(mounted.tree, 'dsh-custom-action').map((button) => button.children[0]),
-      ['乙', '丙', '甲'],
+      ['丙', '乙', '甲'],
       '保存后按钮条按新顺序渲染',
     )
   } finally {
     globalThis.fetch = prevFetch
   }
 })
+
+test('编辑器：拖动落点用零回流插入线指示（插占位节点会让界面来回跳）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '甲', text: 'a' },
+        { label: '乙', text: 'b' },
+        { label: '丙', text: 'c' },
+      ],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    const labels = () => findAllByClass(mounted.tree, 'dsh-custom-label-input').map((input) => input.props.value)
+    const rightSection = () => findByClass(mounted.tree, 'dsh-section-right')
+    /** 带插入指示线（box-shadow）的节点。指示线用样式画，**不插节点**：插节点会推走下面的行，dragover 目标来回横跳。 */
+    const lineOf = (node) => String(node?.props?.style?.boxShadow ?? '')
+    const rowsWithLine = () => findAllByClass(mounted.tree, 'dsh-custom-row').filter((node) => lineOf(node) !== '')
+    const addButtonLine = () => lineOf(findByClass(mounted.tree, 'dsh-custom-add-right'))
+    const rowCount = () => findAllByClass(mounted.tree, 'dsh-custom-row').length
+    const sectionChildCount = () => (rightSection().children ?? []).length
+    const countsBefore = [rowCount(), sectionChildCount()]
+    assert.deepEqual(rowsWithLine().length, 0, '没在拖的时候不该有插入线')
+
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[0].props.onDragStart({})
+    findAllByClass(mounted.tree, 'dsh-custom-row')[2].props.onDragOver({ preventDefault() {} })
+    await tick()
+    assert.equal(rowsWithLine().length, 1, '拖到第 3 行上：那一行出一条插入线')
+    assert.equal(rowsWithLine()[0], findAllByClass(mounted.tree, 'dsh-custom-row')[2], '线画在目标行上沿')
+    assert.match(lineOf(rowsWithLine()[0]), /box-shadow|inset/, '指示线是 box-shadow，不是占位节点')
+
+    // 关键回归：反复 dragover 不能让面板结构变化（否则就是「界面一直来回跳」的成因）
+    for (let round = 0; round < 5; round += 1) {
+      findAllByClass(mounted.tree, 'dsh-custom-row')[1].props.onDragOver({ preventDefault() {} })
+      findAllByClass(mounted.tree, 'dsh-custom-row')[2].props.onDragOver({ preventDefault() {} })
+    }
+    assert.deepEqual([rowCount(), sectionChildCount()], countsBefore, 'dragover 期间行数/分区子节点数必须不变（零回流）')
+
+    // 拖到分区标题/空白/「＋ 新按钮」= 落在本区末尾：线画在本区**最后一行下沿**
+    rightSection().props.onDragOver({ preventDefault() {} })
+    assert.equal(rowsWithLine().length, 1, '落在区末尾时：只有最后一行出一条下沿线')
+    assert.equal(rowsWithLine()[0], findAllByClass(mounted.tree, 'dsh-custom-row')[2], '线画在最后一行下沿')
+    assert.match(lineOf(rowsWithLine()[0]), /-2px/, '下沿线的方向是朝下的')
+    assert.equal(addButtonLine(), '', '有行的时候不额外画按钮框')
+
+    // 空分区：线画不到行上，改在「＋ 新按钮」上用虚线外框标出来（outline 也不回流）
+    const leftSection = () => findByClass(mounted.tree, 'dsh-section-left')
+    leftSection().props.onDragOver({ preventDefault() {} })
+    assert.equal(rowsWithLine().length, 0, '切到空分区后，右侧行上的线要撤掉')
+    assert.match(
+      String(findByClass(mounted.tree, 'dsh-custom-add-left').props.style?.outline ?? ''),
+      /dashed/,
+      '空分区的「＋ 新按钮」用虚线外框标出来',
+    )
+
+    // 松手：移到本区末尾
+    rightSection().props.onDragOver({ preventDefault() {} })
+    rightSection().props.onDrop({ preventDefault() {}, stopPropagation() {} })
+    await tick()
+    assert.equal(rowsWithLine().length, 0, '松手后插入线消失')
+    assert.equal(addButtonLine(), '', '松手后「＋ 新按钮」也没有框')
+    assert.deepEqual(labels(), ['乙', '丙', '甲'], '拖到区末尾 = 移到该区最后')
+
+    // 收起（Esc / 点遮罩）不该留下插入线
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[0].props.onDragStart({})
+    rightSection().props.onDragOver({ preventDefault() {} })
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[0].props.onDragEnd({ currentTarget: { parentElement: null } })
+    assert.equal(rowsWithLine().length, 0, '拖动结束后插入线消失')
+    assert.equal(addButtonLine(), '', '拖动结束后按钮上的框也消失')
+
+    // 拖到自己那一行：位置不变，也不该画出「区末尾」的假线
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[0].props.onDragStart({})
+    findAllByClass(mounted.tree, 'dsh-custom-row')[0].props.onDragOver({ preventDefault() {}, stopPropagation() {} })
+    assert.equal(rowsWithLine().length, 0, '拖到自己身上不画线')
+    assert.equal(addButtonLine(), '', '拖到自己身上也不落到区末尾')
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[0].props.onDragEnd({ currentTarget: { parentElement: null } })
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 
 test('填入：走宿主光标插入 API（caretSpan + draftRev + insertText），不提交', async () => {
   const plugin = await loadPlugin()
@@ -574,7 +686,7 @@ test('继续：配置成「填入」时点一下只填光标处，不提交', as
     const mounted = mountDock(ctx)
     const button = actionByLabel(mounted.tree, '继续')
     assert.ok(button)
-    assert.equal(button.props.style.borderStyle, 'dashed', '填入类按钮用虚线边区分')
+    assert.match(String(button.props.style.borderColor), /CanvasText/, '填入类按钮用中性描边区分（不再用虚线）')
     assert.match(button.props.title, /^继续 · Ctrl \+ 点击直接发送$/, '填入类提示带 Ctrl 直发说明')
     button.props.onClick()
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
@@ -610,7 +722,7 @@ test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提�
     const insertButton = findAllWithClassToken(tree, 'dsh-custom-action-insert')[0]
     assert.ok(insertButton, '插入类自定义按钮应当有自己的 class')
     assert.equal(insertButton.children[0], '模板')
-    assert.equal(insertButton.props.style.borderStyle, 'dashed', '填入=虚线')
+    assert.match(String(insertButton.props.style.borderColor), /CanvasText/, '填入=中性描边')
     assert.equal(insertButton.props.style.background, 'transparent', '填入=透明底')
     assert.match(insertButton.props.title, /^模板文字 · Ctrl \+ 点击直接发送$/, '悬浮提示只放要填入的文字，另加 Ctrl 直发说明')
     insertButton.props.onClick()
@@ -681,7 +793,39 @@ test('编辑器：动作按「左侧 / 右侧」两区分开；保存带上每�
   }
 })
 
-test('编辑器：⇄ 换侧才换区；改方式不换区；每区「添加一条」沿用本区位置', async () => {
+test('编辑器：「＋ 新按钮」在每区行列表下方（标题行不再放按钮）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [{ label: '甲', text: 'a' }, { label: '乙', text: 'b', mode: 'insert' }],
+    hidden: ['continue'],
+    presets: {},
+  }
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, ...base }) })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    for (const side of ['left', 'right']) {
+      const section = findByClass(mounted.tree, `dsh-section-${side}`)
+      const add = findByClass(section, `dsh-custom-add-${side}`)
+      assert.ok(add, `${side} 区要有「＋ 新按钮」`)
+      assert.equal(section.children[section.children.length - 1], add, '「＋ 新按钮」必须是分区最后一个节点（在行列表下方）')
+      const header = section.children[0]
+      assert.equal(findByClass(header, `dsh-custom-add-${side}`), null, '标题行里不能再有添加按钮')
+      assert.equal(add.props.style.width, 'auto', '左对齐文字按钮，不占满整行（整宽虚线框是企业表单套路）')
+      assert.equal(add.props.style.background, 'transparent', '透明底，hover 才出浅底')
+      assert.equal(add.children[0], '＋ 新按钮')
+    }
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('编辑器：⇄ 换侧才换区；改方式不换区；每区「＋ 新按钮」沿用本区位置', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -706,9 +850,11 @@ test('编辑器：⇄ 换侧才换区；改方式不换区；每区「添加一�
     findAllWithClassToken(section('right'), 'dsh-mode-insert')[0].props.onClick()
     assert.deepEqual(labels('right'), ['甲'], '改方式不换区')
     assert.equal(findAllWithClassToken(section('right'), 'dsh-mode-insert')[0].props['aria-checked'], true)
-    // 点「⇄」才换侧：甲移到左侧，按数组顺序排在空行前面
-    findAllWithClassToken(section('right'), 'dsh-custom-side')[0].props.onClick()
-    assert.deepEqual(labels('left'), ['甲', ''], '换侧后按数组顺序插入本区')
+    // 没有 ⇄ 了：把甲拖到左侧分区上 → 换到左侧并排在末尾
+    findAllByClass(section('right'), 'dsh-custom-drag-handle')[0].props.onDragStart({})
+    section('left').props.onDrop({ preventDefault() {}, stopPropagation() {} })
+    await tick()
+    assert.deepEqual(labels('left'), ['', '甲'], '拖到分区上 = 移到该区末尾并换侧')
     assert.deepEqual(labels('right'), [])
   } finally {
     globalThis.fetch = prevFetch
@@ -738,17 +884,14 @@ test('编辑器：↑↓ 只在同区内换位（跳过另一区的行）', asyn
     const labelsOf = (section) => findAllWithClassToken(section, 'dsh-custom-label-input').map((input) => input.props.value)
     let rightSection = findByClass(mounted.tree, 'dsh-section-right')
     assert.deepEqual(labelsOf(rightSection), ['甲', '丙'], '左侧那条（填入类）不参与右侧区的排序')
-    const ups = findAllByClass(rightSection, 'dsh-custom-up')
-    assert.equal(ups[0].props.disabled, true, '本区第一条不能再上移')
-    assert.equal(ups[1].props.disabled, false)
-    ups[1].props.onClick()
+    // 把丙拖到甲上（全局下标：乙 0、甲 1、丙 2）
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[2].props.onDragStart({})
+    findAllByClass(mounted.tree, 'dsh-custom-row')[1].props.onDrop({ preventDefault() {}, stopPropagation() {} })
+    await tick()
 
     rightSection = findByClass(mounted.tree, 'dsh-section-right')
-    assert.deepEqual(labelsOf(rightSection), ['丙', '甲'], '同区内换位')
+    assert.deepEqual(labelsOf(rightSection), ['丙', '甲'], '拖动排序：丙插到甲前面')
     assert.deepEqual(labelsOf(findByClass(mounted.tree, 'dsh-section-left')), ['乙'], '另一区顺序不变')
-
-    const downs = findAllByClass(rightSection, 'dsh-custom-down')
-    assert.equal(downs[1].props.disabled, true, '本区最后一条不能再下移')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -847,8 +990,8 @@ test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前�
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-save')), '保存到配置文件')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-cancel')), '放弃修改')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-close')), '关闭编辑器')
-    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-left')), '添加一条（左侧）')
-    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-right')), '添加一条（右侧）')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-left')), '新按钮（左侧）')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-right')), '新按钮（右侧）')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-remove')), '删除这条')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-mode')), '点一下做什么')
   } finally {
@@ -1101,8 +1244,10 @@ test('继续也是普通按钮：能跟自定义一起排序；＋ 在左组最�
     const labelsOf = () => findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-right'), 'dsh-custom-label-input')
       .map((input) => input.props.value)
     assert.deepEqual(labelsOf(), ['继续', '甲', '乙'], '继续现在是第一条普通按钮')
-    // 继续下移一位 → 甲 继续 乙
-    findAllByClass(mounted.tree, 'dsh-custom-down')[0].props.onClick()
+    // 把继续拖到乙上 → 甲 继续 乙
+    findAllByClass(mounted.tree, 'dsh-custom-drag-handle')[0].props.onDragStart({})
+    findAllByClass(mounted.tree, 'dsh-custom-row')[2].props.onDrop({ preventDefault() {}, stopPropagation() {} })
+    await tick()
     assert.deepEqual(labelsOf(), ['甲', '继续', '乙'], '继续可以跟自定义按钮换位')
 
     findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
@@ -1317,13 +1462,13 @@ test('按钮大小三档：写 localStorage、加根属性、动作条用 CSS �
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
     const select = findByClass(mounted.tree, 'dsh-size-select')
     assert.ok(select, '设置里应当有按钮大小')
-    assert.equal(select.props.value, 'large')
-    assert.equal(attrs['data-dsh-button-size'], 'large', '默认就是大号')
+    assert.equal(select.props.value, 'standard')
+    assert.equal(attrs['data-dsh-button-size'], undefined, '默认标准档：不设 data 属性，走 CSS 回退值')
     select.props.onChange({ target: { value: 'compact' } })
     assert.equal(globalThis.localStorage.getItem('dsh-button:size'), 'compact')
     assert.equal(attrs['data-dsh-button-size'], 'compact')
-    assert.ok(styles.some((style) => /--dsh-btn-h:22px/.test(style.textContent)), '应当注入紧凑 CSS 变量')
-    assert.equal(findByClass(mounted.tree, 'dsh-custom-action').props.style.height, 'var(--dsh-btn-h, 26px)')
+    assert.ok(styles.some((style) => /--dsh-btn-h:24px/.test(style.textContent)), '应当注入紧凑 CSS 变量')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-action').props.style.height, 'var(--dsh-btn-h, 28px)')
   } finally {
     if (prevDocument === undefined) delete globalThis.document
     else globalThis.document = prevDocument
@@ -1363,8 +1508,8 @@ test('外观：四种语义样式各自成型；旧 icon 字段不再渲染', as
     assert.equal(danger.props.style.color, '#e5484d', '警示 = 红字')
     assert.match(String(danger.props.style.background), /#e5484d/)
     const ghost = actionByLabel(tree, '线')
-    assert.equal(ghost.props.style.borderStyle, 'dashed', '虚线 = 虚线边')
-    assert.equal(ghost.props.style.background, 'transparent', '虚线 = 透明底')
+    assert.equal(ghost.props.style.borderStyle, 'solid', '描边 = 实线边（虚线改掉了）')
+    assert.equal(ghost.props.style.background, 'transparent', '描边 = 透明底')
     const plain = actionByLabel(tree, '默认')
     assert.equal(plain.props.style.borderStyle, 'solid', '不写外观时发送类 = 实线')
     assert.match(String(plain.props.style.background), /color-mix/)
@@ -1372,7 +1517,7 @@ test('外观：四种语义样式各自成型；旧 icon 字段不再渲染', as
     const legacyIcon = actionByLabel(tree, '带图')
     assert.ok(legacyIcon, '旧配置里带 icon 的按钮仍应渲染（icon 已被忽略）')
     assert.equal(legacyIcon.children[0], '带图', '旧 icon 字段不再拼到标签前')
-    assert.equal(legacyIcon.props.style.borderStyle, 'dashed', 'insert 缺省 = 虚线')
+    assert.equal(legacyIcon.props.style.borderStyle, 'solid', 'insert 缺省 = 中性描边')
     assert.match(String(primary.props.className), /dsh-style-primary/, 'class 上带样式 token')
   } finally {
     globalThis.fetch = prevFetch
@@ -1407,7 +1552,7 @@ test('Ctrl + 点击：填入类直接发送；普通点击仍只填光标处', a
   }
 })
 
-test('编辑器：外观控件与实时预览', async () => {
+test('编辑器：外观下拉跟着行值；图标字段与预览框都已移除', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -1423,13 +1568,12 @@ test('编辑器：外观控件与实时预览', async () => {
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
     assert.equal(findByClass(mounted.tree, 'dsh-custom-icon-input'), null, '图标输入框已删除')
     assert.equal(findByClass(mounted.tree, 'dsh-custom-style').props.value, 'secondary', '每行应有外观下拉')
-    const previewOf = () => findAllWithClassToken(mounted.tree, 'dsh-preview-action')
-    assert.ok(findByClass(mounted.tree, 'dsh-editor-preview'), '编辑器应有实时预览')
-    assert.equal(previewOf().length, 1)
-    assert.equal(previewOf()[0].children[0], '甲')
-    // 改外观：预览按钮的 class 带新 token
+    // A 风格定稿后预览框整体删除：DOM 里不该再有任何预览节点
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-preview'), null, '预览框已移除')
+    assert.equal(findAllWithClassToken(mounted.tree, 'dsh-preview-action').length, 0, '不再渲染预览按钮')
+    // 改外观：下拉值跟着行走（不再有预览来间接证明）
     findByClass(mounted.tree, 'dsh-custom-style').props.onChange({ target: { value: 'danger' } })
-    assert.match(String(previewOf()[0].props.className), /dsh-style-danger/, '预览里的外观跟着变')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-style').props.value, 'danger', '外观下拉跟着行值走')
   } finally {
     globalThis.fetch = prevFetch
   }

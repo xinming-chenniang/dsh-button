@@ -1454,3 +1454,51 @@ test('第一次拖动后：浮窗提示 + 复位按钮；未移动不提示；�
     else globalThis.localStorage = prevStorage
   }
 })
+
+test('控制行：左组保存后右组重挂，外观立即生效（不用重启）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevStorage = globalThis.localStorage
+  globalThis.localStorage = { getItem: (key) => (key === 'dsh-button:layout' ? 'bar' : null), setItem() {} }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }),
+    }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const regsOf = (id) => ctx.registrations.filter((item) => item.options.id === id)
+    const oldSend = regsOf('dsh-button:send')[0]
+    assert.ok(oldSend, '控制行应注册右组')
+    // 编辑器从 ⋮（左组）打开，把「甲」的外观改成警示，保存
+    const left = mountRegistration(ctx, 'dsh-button:insert')
+    findByClass(left.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(left.tree, 'dsh-custom-style').props.onChange({ target: { value: 'danger' } })
+    findByClass(left.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 右组必须被重挂：旧的注册被释放，换成新实例（不是叠加）
+    const sendAfter = regsOf('dsh-button:send')
+    assert.equal(sendAfter.length, 1, '重挂是替换，不是叠加')
+    assert.ok(!ctx.registrations.includes(oldSend), '旧的右组注册应当被释放')
+    assert.notEqual(sendAfter[0], oldSend, '右组换成了新实例')
+
+    // 新右组拿到的是保存后的配置：按钮带警示色样式
+    const right = mountComponent(sendAfter[0].component().children[0].type)
+    const button = findByClass(right.tree, 'dsh-custom-action')
+    assert.ok(button, '右组应当渲染「甲」')
+    assert.match(String(button.props.className), /dsh-style-danger/, '保存的外观立即在右组生效')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})

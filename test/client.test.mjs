@@ -1213,6 +1213,36 @@ test('容量：不超过 6 条时没有「⋯」入口；上限与宿主一致�
   }
 })
 
+test('保存失败：原因显示在常驻页脚（不藏在可滚动正文里），面板不关、按钮恢复可用', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const base = { buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      return { ok: false, status: 400, json: async () => ({ ok: false, message: '最多 8 个自定义按钮（当前 10 个）' }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const errorBox = findByClass(mounted.tree, 'dsh-custom-error')
+    assert.ok(errorBox, '失败原因必须有固定落点（页脚）')
+    assert.equal(errorBox.children[0], '最多 8 个自定义按钮（当前 10 个）', '原因原文透出')
+    const saveButton = findByClass(mounted.tree, 'dsh-custom-save')
+    assert.ok(saveButton, '面板不关')
+    assert.equal(saveButton.props.disabled, false, '失败后按钮恢复可用')
+    assert.equal(saveButton.children[0], '保存')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('模型实验开关：勾选后写 localStorage 并强制收起', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()

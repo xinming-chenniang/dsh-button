@@ -331,25 +331,32 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
 test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、上限与长度校验）', async () => {
   const plugin = await loadPlugin()
   const { blankCustomRow, validateCustomRows, MAX_CUSTOM } = plugin.__internals
-  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send', style: 'secondary', icon: '' })
-  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert', style: 'ghost', icon: '' })
+  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send', style: 'secondary', icon: '', side: 'right' })
+  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert', style: 'ghost', icon: '', side: 'left' })
+  // 位置显式指定时以它为准（位置与动作解耦：左侧也可以是发送按钮）
+  assert.deepEqual(blankCustomRow('send', 'left'), { label: '', text: '', mode: 'send', style: 'secondary', icon: '', side: 'left' })
   // 空行直接跳过，不要求用户自己删干净
   assert.deepEqual(validateCustomRows([
     { label: ' 收尾 ', text: ' 收尾 ' },
     blankCustomRow(),
   ]), {
     ok: true,
-    buttons: [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '' }],
+    buttons: [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '', side: 'right' }],
   })
-  // mode 原样带上（编辑器按方式分区）
+  // mode 原样带上（编辑器按位置分区，位置与动作解耦）
   assert.deepEqual(validateCustomRows([{ label: '模板', text: 'x', mode: 'insert' }]), {
     ok: true,
-    buttons: [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', icon: '' }],
+    buttons: [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', icon: '', side: 'left' }],
   })
   // 外观与图标原样带上；非法图标在编辑器里就拦下
   assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', icon: '🏁', style: 'primary' }]), {
     ok: true,
-    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'primary', icon: '🏁' }],
+    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'primary', icon: '🏁', side: 'right' }],
+  })
+  // 位置显式指定时原样带上，与 mode 解耦（左侧的发送按钮合法）
+  assert.deepEqual(validateCustomRows([{ label: '左发', text: 'x', side: 'left' }]), {
+    ok: true,
+    buttons: [{ label: '左发', text: 'x', mode: 'send', style: 'secondary', icon: '', side: 'left' }],
   })
   const badIcon = validateCustomRows([{ label: '主', text: 'x', icon: '🏁🏁🏁' }])
   assert.equal(badIcon.ok, false)
@@ -366,7 +373,7 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   assert.equal(validateCustomRows([{ label: 'a'.repeat(30), text: 'x' }]).ok, false)
   assert.equal(validateCustomRows([{ label: 'a', text: 'x'.repeat(600) }]).ok, false)
   // 不带 "=" 的标签也合法（旧的行格式要求已取消）
-  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send', style: 'secondary', icon: '' }] })
+  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send', style: 'secondary', icon: '', side: 'right' }] })
 })
 
 test("删掉的预设不渲染（hidden=['continue']），重发仍在", async () => {
@@ -623,7 +630,7 @@ test('自定义按钮：mode=insert 的按钮点击只填入光标处，不提�
   }
 })
 
-test('编辑器：动作按「直接发送 / 填入输入框」两区分开；保存带上每条的方式', async () => {
+test('编辑器：动作按「左侧 / 右侧」两区分开；保存带上每条的位置与方式', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx({ insert: { caret: [0, 0], draftRev: 1 } })
   const posts = []
@@ -650,27 +657,29 @@ test('编辑器：动作按「直接发送 / 填入输入框」两区分开；�
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
-    const sendSection = () => findByClass(mounted.tree, 'dsh-section-send')
-    const insertSection = () => findByClass(mounted.tree, 'dsh-section-insert')
-    assert.deepEqual(findAllWithClassToken(sendSection(), 'dsh-custom-label-input').map((input) => input.props.value), ['甲'])
-    assert.deepEqual(findAllWithClassToken(insertSection(), 'dsh-custom-label-input').map((input) => input.props.value), ['乙'])
-    assert.equal(findAllWithClassToken(sendSection(), 'dsh-mode-send')[0].props['aria-checked'], true)
-    assert.equal(findAllWithClassToken(insertSection(), 'dsh-mode-insert')[0].props['aria-checked'], true)
+    const leftSection = () => findByClass(mounted.tree, 'dsh-section-left')
+    const rightSection = () => findByClass(mounted.tree, 'dsh-section-right')
+    const labelsOf = (section) => findAllWithClassToken(section, 'dsh-custom-label-input').map((input) => input.props.value)
+    // 缺省位置按方式派生：insert → 左侧、send → 右侧（与 1.3 的位置完全一致）
+    assert.deepEqual(labelsOf(rightSection()), ['甲'])
+    assert.deepEqual(labelsOf(leftSection()), ['乙'])
+    assert.equal(findAllWithClassToken(rightSection(), 'dsh-mode-send')[0].props['aria-checked'], true)
+    assert.equal(findAllWithClassToken(leftSection(), 'dsh-mode-insert')[0].props['aria-checked'], true)
 
     findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(posts.length, 1)
     assert.deepEqual(posts[0].buttons, [
-      { label: '甲', text: 'a', mode: 'send', style: 'secondary', icon: '' },
-      { label: '乙', text: 'b', mode: 'insert', style: 'ghost', icon: '' },
-    ], '每条按钮的方式要原样落盘')
+      { label: '甲', text: 'a', mode: 'send', style: 'secondary', icon: '', side: 'right' },
+      { label: '乙', text: 'b', mode: 'insert', style: 'ghost', icon: '', side: 'left' },
+    ], '每条按钮的位置与方式都要原样落盘')
     assert.deepEqual(posts[0].hidden, ['continue'])
   } finally {
     globalThis.fetch = prevFetch
   }
 })
 
-test('编辑器：改方式会把这条移到另一区；每区的「添加一条」沿用本区方式', async () => {
+test('编辑器：⇄ 换侧才换区；改方式不换区；每区「添加一条」沿用本区位置', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -682,21 +691,23 @@ test('编辑器：改方式会把这条移到另一区；每区的「添加一�
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
-    // 填入区一开始只有预设置位（这里预设都是直接发送，所以没有行）
-    assert.equal(findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').length, 0)
-    // 在填入区加一条：空行落在填入区
-    findByClass(mounted.tree, 'dsh-custom-add-insert').props.onClick()
-    assert.deepEqual(
-      findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').map((input) => input.props.value),
-      [''],
-    )
-    // 把「甲」改成填入：它移到填入区，按数组顺序排在空行前面
-    findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-mode-insert')[0].props.onClick()
-    assert.deepEqual(
-      findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-insert'), 'dsh-custom-label-input').map((input) => input.props.value),
-      ['甲', ''],
-    )
-    assert.equal(findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-custom-label-input').length, 0)
+    const section = (side) => findByClass(mounted.tree, `dsh-section-${side}`)
+    const labels = (side) => findAllWithClassToken(section(side), 'dsh-custom-label-input').map((input) => input.props.value)
+
+    // 左侧一开始没有行（甲是发送按钮，缺省在右侧）
+    assert.deepEqual(labels('left'), [])
+    // 在左侧加一条：空行落在左侧，动作默认「填入」
+    findByClass(mounted.tree, 'dsh-custom-add-left').props.onClick()
+    assert.deepEqual(labels('left'), [''])
+    assert.equal(findAllWithClassToken(section('left'), 'dsh-mode-insert')[0].props['aria-checked'], true, '左侧新行默认填入')
+    // 改「方式」不换区：甲改成填入后仍留在右侧（位置与动作解耦）
+    findAllWithClassToken(section('right'), 'dsh-mode-insert')[0].props.onClick()
+    assert.deepEqual(labels('right'), ['甲'], '改方式不换区')
+    assert.equal(findAllWithClassToken(section('right'), 'dsh-mode-insert')[0].props['aria-checked'], true)
+    // 点「⇄」才换侧：甲移到左侧，按数组顺序排在空行前面
+    findAllWithClassToken(section('right'), 'dsh-custom-side')[0].props.onClick()
+    assert.deepEqual(labels('left'), ['甲', ''], '换侧后按数组顺序插入本区')
+    assert.deepEqual(labels('right'), [])
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -723,18 +734,18 @@ test('编辑器：↑↓ 只在同区内换位（跳过另一区的行）', asyn
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
     const labelsOf = (section) => findAllWithClassToken(section, 'dsh-custom-label-input').map((input) => input.props.value)
-    let sendSection = findByClass(mounted.tree, 'dsh-section-send')
-    assert.deepEqual(labelsOf(sendSection), ['甲', '丙'], '填入类那条不参与直接发送区的排序')
-    const ups = findAllByClass(sendSection, 'dsh-custom-up')
+    let rightSection = findByClass(mounted.tree, 'dsh-section-right')
+    assert.deepEqual(labelsOf(rightSection), ['甲', '丙'], '左侧那条（填入类）不参与右侧区的排序')
+    const ups = findAllByClass(rightSection, 'dsh-custom-up')
     assert.equal(ups[0].props.disabled, true, '本区第一条不能再上移')
     assert.equal(ups[1].props.disabled, false)
     ups[1].props.onClick()
 
-    sendSection = findByClass(mounted.tree, 'dsh-section-send')
-    assert.deepEqual(labelsOf(sendSection), ['丙', '甲'], '同区内换位')
-    assert.deepEqual(labelsOf(findByClass(mounted.tree, 'dsh-section-insert')), ['乙'], '另一区顺序不变')
+    rightSection = findByClass(mounted.tree, 'dsh-section-right')
+    assert.deepEqual(labelsOf(rightSection), ['丙', '甲'], '同区内换位')
+    assert.deepEqual(labelsOf(findByClass(mounted.tree, 'dsh-section-left')), ['乙'], '另一区顺序不变')
 
-    const downs = findAllByClass(sendSection, 'dsh-custom-down')
+    const downs = findAllByClass(rightSection, 'dsh-custom-down')
     assert.equal(downs[1].props.disabled, true, '本区最后一条不能再下移')
   } finally {
     globalThis.fetch = prevFetch
@@ -762,7 +773,7 @@ test('编辑器浮层 portal 到 body：不再被宿主「回到底部」浮动�
     const portal = findByType(mounted.tree, 'portal')
     assert.ok(portal, '打开编辑器后应当用 createPortal 渲染（否则会被聊天区浮动按钮盖住）')
     assert.equal(portal.props.container, body, 'portal 容器必须是 document.body')
-    assert.ok(findByClass(portal, 'dsh-section-send'), '编辑器内容应挂在 portal 里')
+    assert.ok(findByClass(portal, 'dsh-section-right'), '编辑器内容应挂在 portal 里')
     assert.ok(findByClass(portal, 'dsh-custom-save'), '保存按钮也在 portal 里')
     assert.ok(findByClass(portal, 'dsh-custom-editor-backdrop'), '面板背后有透明遮罩')
     findByClass(portal, 'dsh-custom-editor-backdrop').props.onClick()
@@ -834,8 +845,8 @@ test('编辑器控件：都有说明性 title，预设删除/恢复跟随当前�
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-save')), '保存到配置文件')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-cancel')), '放弃修改')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-close')), '关闭编辑器')
-    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-send')), '添加一条（发送）')
-    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-insert')), '添加一条（填入）')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-left')), '添加一条（左侧）')
+    assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-add-right')), '添加一条（右侧）')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-remove')), '删除这条')
     assert.equal(titleOf(findByClass(mounted.tree, 'dsh-custom-mode')), '点一下做什么')
   } finally {
@@ -1085,7 +1096,7 @@ test('继续也是普通按钮：能跟自定义一起排序；＋ 在左组最�
     assert.equal(insertGroup.children[0].props.className, 'dsh-custom-manage', '＋ 固定在左组最前')
 
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
-    const labelsOf = () => findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-send'), 'dsh-custom-label-input')
+    const labelsOf = () => findAllWithClassToken(findByClass(mounted.tree, 'dsh-section-right'), 'dsh-custom-label-input')
       .map((input) => input.props.value)
     assert.deepEqual(labelsOf(), ['继续', '甲', '乙'], '继续现在是第一条普通按钮')
     // 继续下移一位 → 甲 继续 乙
@@ -1096,6 +1107,38 @@ test('继续也是普通按钮：能跟自定义一起排序；＋ 在左组最�
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.deepEqual(posts[0].buttons.map((button) => button.label), ['甲', '继续', '乙'], '顺序按编辑器落盘')
     assert.deepEqual(posts[0].hidden, ['continue'])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('动作条按 side 分组：左侧也能放发送按钮（位置与动作解耦）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '左发', text: 'a', side: 'left' },
+        { label: '右填', text: 'b', mode: 'insert', side: 'right' },
+      ],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const leftGroup = findByClass(mounted.tree, 'dsh-action-row-insert')
+    const rightGroup = findByClass(mounted.tree, 'dsh-action-row-send')
+    assert.ok(actionByLabel(leftGroup, '左发'), '显式 side=left 的发送按钮在左组')
+    assert.equal(actionByLabel(leftGroup, '右填'), null, 'insert 但 side=right 的不在左组')
+    assert.ok(actionByLabel(rightGroup, '右填'), '显式 side=right 的填入按钮在右组')
+    assert.equal(actionByLabel(rightGroup, '左发'), null, 'send 但 side=left 的不在右组')
   } finally {
     globalThis.fetch = prevFetch
   }

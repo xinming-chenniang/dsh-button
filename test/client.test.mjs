@@ -1226,6 +1226,7 @@ test('外观与图标：四种语义样式各自成型，图标显示在标签�
     const plain = actionByLabel(tree, '默认')
     assert.equal(plain.props.style.borderStyle, 'solid', '不写外观时发送类 = 实线')
     assert.match(String(plain.props.style.background), /color-mix/)
+    assert.match(String(plain.props.style.borderColor), /color-mix/, '浅底边框跟底色同源（主色淡边），不用全局深边')
     const withIcon = findAllWithClassToken(tree, 'dsh-custom-action').find((button) => String(button.children[0]).includes('带图'))
     assert.ok(withIcon, '带图标的按钮应当渲染出来')
     assert.equal(withIcon.children[0], '🏁 带图', '图标显示在标签前')

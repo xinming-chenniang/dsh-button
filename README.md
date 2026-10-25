@@ -23,11 +23,13 @@
 dsh plugin --profile <你的profile> add dsh-button
 ```
 
-从 GitHub 装也可以：
+从 GitHub 装也可以（钉在已发布的 `v1.3.0`）：
 
 ```powershell
-dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button
+dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.0
 ```
+
+`#v1.3.0` 不要省：不钉版本会取仓库的 `main`，那是下一次发版前的代码——版本号仍写 1.3.0，行为和已发布版本不一致。
 
 装完要重启 DSH。客户端插件是启动时加载的，刷新页面不会生效。
 

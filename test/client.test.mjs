@@ -1296,3 +1296,161 @@ test('编辑器：图标 / 外观控件与实时预览', async () => {
     globalThis.fetch = prevFetch
   }
 })
+
+test('clampEditorPos：把面板夹回视口，四周至少留 margin', async () => {
+  const plugin = await loadPlugin()
+  const { clampEditorPos } = plugin.__internals
+  const size = { width: 600, height: 400 }
+  const viewport = { width: 1024, height: 768 }
+  assert.deepEqual(clampEditorPos({ left: 100, top: 100 }, size, viewport), { left: 100, top: 100 }, '视口内不动')
+  assert.deepEqual(clampEditorPos({ left: -50, top: -50 }, size, viewport), { left: 8, top: 8 }, '越界夹到 margin')
+  assert.deepEqual(clampEditorPos({ left: 9999, top: 9999 }, size, viewport), { left: 416, top: 360 }, '右下夹到边界')
+  // 面板比视口还大：至少露出 margin，不能算出负数
+  assert.deepEqual(clampEditorPos({ left: 0, top: 0 }, { width: 2000, height: 2000 }, viewport), { left: 8, top: 8 })
+})
+
+test('设置面板可拖动：标题栏拖拽改 left/top 并记住；双击复位；按钮上不启动拖动', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevStorage = globalThis.localStorage
+  const store = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => (key === 'dsh-button:layout' ? 'below' : (store.get(key) ?? null)),
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  }
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    const header = findByClass(mounted.tree, 'dsh-custom-editor-header')
+    assert.ok(header, '标题栏是拖动手柄')
+    assert.equal(header.props.style.cursor, 'grab')
+
+    // 标题栏上的按钮不启动拖动（否则点 × 会被当成拖）
+    header.props.onPointerDown({ button: 0, clientX: 0, clientY: 0, pointerId: 9, target: { tagName: 'BUTTON' }, currentTarget: { parentElement: null } })
+    header.props.onPointerMove({ clientX: 999, clientY: 999, pointerId: 9 })
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-editor-panel').props.style.left, undefined, '没拖过就还是右下角默认位')
+
+    // 从 (100,100) 拖到 (150,120)：面板从 (200,300) 移到 (250,320)
+    header.props.onPointerDown({
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+      target: { tagName: 'STRONG' },
+      currentTarget: {
+        parentElement: { getBoundingClientRect: () => ({ left: 200, top: 300, width: 600, height: 400 }) },
+        setPointerCapture() {},
+      },
+      preventDefault() {},
+    })
+    header.props.onPointerMove({ clientX: 150, clientY: 120, pointerId: 1 })
+    const panel = findByClass(mounted.tree, 'dsh-custom-editor-panel')
+    assert.equal(panel.props.style.left, '250px', '向右拖 50px')
+    assert.equal(panel.props.style.top, '320px', '向下拖 20px')
+    assert.equal(panel.props.style.right, 'auto', '拖过之后不再用右下角定位')
+    assert.equal(store.get('dsh-button:editor-pos'), '{"left":250,"top":320}', '位置写进 localStorage')
+    header.props.onPointerUp()
+
+    // 双击标题栏复位：回到右下角默认位，并清掉记忆
+    findByClass(mounted.tree, 'dsh-custom-editor-header').props.onDoubleClick()
+    const reset = findByClass(mounted.tree, 'dsh-custom-editor-panel')
+    assert.equal(reset.props.style.left, undefined, '复位后回到默认位')
+    assert.equal(reset.props.style.right, '18px')
+    assert.equal(store.has('dsh-button:editor-pos'), false, '复位清掉记忆')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})
+
+test('第一次拖动后：浮窗提示 + 复位按钮；未移动不提示；每次打开只提示一次', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const prevStorage = globalThis.localStorage
+  const store = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => (key === 'dsh-button:layout' ? 'below' : (store.get(key) ?? null)),
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  }
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a' }], hidden: ['continue'], presets: {} }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const drag = (from, to) => {
+      const header = findByClass(mounted.tree, 'dsh-custom-editor-header')
+      header.props.onPointerDown({
+        button: 0,
+        clientX: from[0],
+        clientY: from[1],
+        pointerId: 1,
+        target: { tagName: 'STRONG' },
+        currentTarget: {
+          parentElement: { getBoundingClientRect: () => ({ left: 200, top: 300, width: 600, height: 400 }) },
+          setPointerCapture() {},
+        },
+        preventDefault() {},
+      })
+      if (to !== null) header.props.onPointerMove({ clientX: to[0], clientY: to[1], pointerId: 1 })
+      header.props.onPointerUp()
+    }
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-toast'), null, '还没拖动时没有浮窗')
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-reset'), null, '还没拖动时没有复位按钮')
+
+    // 只按下不移动：不算拖动，不提示也不出按钮
+    drag([10, 10], null)
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-toast'), null, '没有移动就不提示')
+
+    // 真的拖一次：浮窗 + 复位按钮一起出现
+    drag([10, 10], [60, 40])
+    const toast = findByClass(mounted.tree, 'dsh-editor-toast')
+    assert.ok(toast, '第一次拖动后浮出提示')
+    assert.equal(toast.children[0], '位置已保存 · 双击标题栏或点 ⟲ 可复位')
+    assert.equal(toast.props.role, 'status')
+    assert.equal(toast.props.style.pointerEvents, 'none', '提示不挡点击')
+    assert.equal(toast.props.style.position, 'absolute', '浮窗挂在面板内部上方')
+    assert.equal(toast.props.style.top, '-34px', '浮在标题栏上方')
+    assert.ok(findByClass(mounted.tree, 'dsh-editor-reset'), '第一次拖动后出现复位按钮')
+
+    // 同一轮里再拖：不重复弹
+    drag([20, 20], [70, 50])
+    assert.equal(findAllByClass(mounted.tree, 'dsh-editor-toast').length, 1, '每次打开只提示一次')
+
+    // 点复位：回默认位，提示与按钮一起收起
+    findByClass(mounted.tree, 'dsh-editor-reset').props.onClick()
+    const panel = findByClass(mounted.tree, 'dsh-custom-editor-panel')
+    assert.equal(panel.props.style.left, undefined, '复位回默认位')
+    assert.equal(panel.props.style.right, '18px')
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-reset'), null, '复位后按钮隐藏')
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-toast'), null, '复位后提示收起')
+
+    // 关掉再打开：重置，再拖又重新出现
+    findByClass(mounted.tree, 'dsh-custom-editor-backdrop').props.onClick()
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-toast'), null, '重新打开后重置')
+    drag([10, 10], [40, 30])
+    assert.ok(findByClass(mounted.tree, 'dsh-editor-toast'), '重新打开后的第一次拖动再次提示')
+    assert.ok(findByClass(mounted.tree, 'dsh-editor-reset'), '复位按钮也再次出现')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevStorage === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = prevStorage
+  }
+})

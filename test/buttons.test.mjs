@@ -80,13 +80,13 @@ function buttonsHandler() {
 test('validateConfig：接受数组与 {buttons}，去掉首尾空白，hidden 默认空、presets 用默认值', () => {
   assert.deepEqual(validateConfig([{ label: ' 收尾 ', text: ' 收尾 ' }]), {
     ok: true,
-    buttons: [{ label: '收尾', text: '收尾', mode: 'send' }],
+    buttons: [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '' }],
     hidden: [],
     presets: DEFAULT_PRESETS,
   })
   assert.deepEqual(validateConfig({ buttons: [{ label: '知识库', text: '用 knowledge-base 查一下' }] }), {
     ok: true,
-    buttons: [{ label: '知识库', text: '用 knowledge-base 查一下', mode: 'send' }],
+    buttons: [{ label: '知识库', text: '用 knowledge-base 查一下', mode: 'send', style: 'secondary', icon: '' }],
     hidden: [],
     presets: DEFAULT_PRESETS,
   })
@@ -96,8 +96,33 @@ test('validateConfig：接受数组与 {buttons}，去掉首尾空白，hidden �
     hidden: ['continue', 'resend'],
     presets: DEFAULT_PRESETS,
   })
-  // 1.2.x 写的配置没有 mode 字段 = 直接发送（向后兼容）
-  assert.deepEqual(validateConfig([{ label: '旧', text: '旧' }]).buttons, [{ label: '旧', text: '旧', mode: 'send' }])
+  // 1.2.x 写的配置没有 mode 字段 = 直接发送（向后兼容）；没有 style 也按 mode 派生
+  assert.deepEqual(validateConfig([{ label: '旧', text: '旧' }]).buttons, [{ label: '旧', text: '旧', mode: 'send', style: 'secondary', icon: '' }])
+})
+
+test('validateConfig：外观与图标可选；未知外观/超长图标明确报错', () => {
+  // 显式写外观：主色 / 警示 / 虚线 都原样保留
+  assert.deepEqual(
+    validateConfig([{ label: '主', text: 'x', style: 'primary' }, { label: '危', text: 'x', style: 'danger' }, { label: '线', text: 'x', style: 'ghost' }]).buttons,
+    [
+      { label: '主', text: 'x', mode: 'send', style: 'primary', icon: '' },
+      { label: '危', text: 'x', mode: 'send', style: 'danger', icon: '' },
+      { label: '线', text: 'x', mode: 'send', style: 'ghost', icon: '' },
+    ],
+  )
+  // 图标：一个 emoji / 一个字符都可以，首尾空白被吃掉
+  assert.deepEqual(validateConfig([{ label: '收', text: 'x', icon: ' 🏁 ' }]).buttons, [{ label: '收', text: 'x', mode: 'send', style: 'secondary', icon: '🏁' }])
+  // 外观写错
+  const badStyle = validateConfig([{ label: 'a', text: 'b', style: 'neon' }])
+  assert.equal(badStyle.ok, false)
+  assert.match(badStyle.message, /外观/)
+  assert.match(badStyle.message, /primary/)
+  // 图标超过 MAX_ICON 个码位
+  const badIcon = validateConfig([{ label: 'a', text: 'b', icon: '🏁🏁🏁' }])
+  assert.equal(badIcon.ok, false)
+  assert.match(badIcon.message, /图标/)
+  // 图标里不能有空白
+  assert.equal(validateConfig([{ label: 'a', text: 'b', icon: 'a b' }]).ok, false)
 })
 
 test('validateConfig：拒绝超限、空字段与换行标签；允许 "=" 与多行文字', () => {
@@ -111,14 +136,14 @@ test('validateConfig：拒绝超限、空字段与换行标签；允许 "=" 与�
   // 编辑器不再用「标签 = 文字」的行格式，标签里的 "=" 就是普通字符；文字可以是多行
   assert.deepEqual(validateConfig([{ label: 'a=b', text: '第一行\n第二行' }]), {
     ok: true,
-    buttons: [{ label: 'a=b', text: '第一行\n第二行', mode: 'send' }],
+    buttons: [{ label: 'a=b', text: '第一行\n第二行', mode: 'send', style: 'secondary', icon: '' }],
     hidden: [],
     presets: DEFAULT_PRESETS,
   })
 })
 
 test('validateConfig：mode 只接受 send / insert，未知值明确报错', () => {
-  assert.deepEqual(validateConfig([{ label: '模板', text: 'x', mode: 'insert' }]).buttons, [{ label: '模板', text: 'x', mode: 'insert' }])
+  assert.deepEqual(validateConfig([{ label: '模板', text: 'x', mode: 'insert' }]).buttons, [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', icon: '' }])
   const bad = validateConfig([{ label: '模板', text: 'x', mode: 'paste' }])
   assert.equal(bad.ok, false)
   assert.match(bad.message, /mode/)
@@ -186,7 +211,7 @@ test('saveConfig：自动建目录、原子写，读回来是同一份（含 hid
     assert.equal(saved.ok, true, saved.message)
     const loaded = loadConfig(nested)
     assert.equal(loaded.ok, true)
-    assert.deepEqual(loaded.buttons, [{ label: '收尾', text: '收尾', mode: 'send' }])
+    assert.deepEqual(loaded.buttons, [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '' }])
     assert.deepEqual(loaded.hidden, ['resend'])
     assert.match(readFileSync(nested, 'utf8'), /"hidden"/)
     assert.match(readFileSync(nested, 'utf8'), /"mode"/)
@@ -201,7 +226,7 @@ test('GET 路由：返回当前配置、hidden、presets 与路径', async () =>
     await handler(fakeReq({ method: 'GET' }), res)
     assert.equal(res.out.status, 200)
     assert.equal(res.out.payload.ok, true)
-    assert.deepEqual(res.out.payload.buttons, [{ label: '知识库', text: '用 knowledge-base 查', mode: 'insert' }])
+    assert.deepEqual(res.out.payload.buttons, [{ label: '知识库', text: '用 knowledge-base 查', mode: 'insert', style: 'ghost', icon: '' }])
     assert.deepEqual(res.out.payload.hidden, ['continue'])
     assert.deepEqual(res.out.payload.presets, DEFAULT_PRESETS)
     assert.equal(res.out.payload.defaults, false, '已有配置文件时不应再标记为默认')
@@ -240,7 +265,10 @@ test('POST 路由：保存合法配置（含 hidden、presets 与 mode）并落�
       res,
     )
     assert.equal(res.out.status, 200)
-    assert.deepEqual(res.out.payload.buttons, [{ label: '收尾', text: '收尾', mode: 'send' }, { label: '模板', text: '插入用', mode: 'insert' }])
+    assert.deepEqual(res.out.payload.buttons, [
+      { label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '' },
+      { label: '模板', text: '插入用', mode: 'insert', style: 'ghost', icon: '' },
+    ])
     assert.deepEqual(res.out.payload.hidden, ['resend'])
     assert.deepEqual(res.out.payload.presets, {
       continue: { label: '继续吧', text: '继续吧', mode: 'send' },
@@ -248,8 +276,8 @@ test('POST 路由：保存合法配置（含 hidden、presets 与 mode）并落�
     })
     const saved = JSON.parse(readFileSync(file, 'utf8'))
     assert.deepEqual(saved.buttons, [
-      { label: '收尾', text: '收尾', mode: 'send' },
-      { label: '模板', text: '插入用', mode: 'insert' },
+      { label: '收尾', text: '收尾', mode: 'send', style: 'secondary', icon: '' },
+      { label: '模板', text: '插入用', mode: 'insert', style: 'ghost', icon: '' },
     ])
     assert.deepEqual(saved.hidden, ['resend'])
     assert.deepEqual(saved.presets.continue, { label: '继续吧', text: '继续吧', mode: 'send' })
@@ -272,7 +300,7 @@ test('POST 路由：非法配置 → 400，且不覆盖旧文件（含非法 hid
     assert.equal(badHidden.out.status, 400)
     assert.match(String(badHidden.out.payload.message), /closeout/)
 
-    assert.deepEqual(loadConfig(file).buttons, [{ label: '旧', text: '旧', mode: 'send' }])
+    assert.deepEqual(loadConfig(file).buttons, [{ label: '旧', text: '旧', mode: 'send', style: 'secondary', icon: '' }])
   })
 })
 

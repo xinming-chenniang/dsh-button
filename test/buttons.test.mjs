@@ -141,6 +141,13 @@ test('validateConfig：拒绝超限、空字段与换行标签；允许 "=" 与�
   })
 })
 
+test('MAX_BUTTONS：放宽到 40（溢出交给动作条「⋯」面板）', () => {
+  assert.equal(MAX_BUTTONS, 40)
+  const rows = (n) => Array.from({ length: n }, (_, i) => ({ label: `b${i}`, text: 'x' }))
+  assert.equal(validateConfig(rows(40)).ok, true, '40 条应当合法')
+  assert.equal(validateConfig(rows(41)).ok, false, '41 条应当被拒')
+})
+
 test('validateConfig：mode 只接受 send / insert，未知值明确报错', () => {
   assert.deepEqual(validateConfig([{ label: '模板', text: 'x', mode: 'insert' }]).buttons, [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', side: 'left' }])
   const bad = validateConfig([{ label: '模板', text: 'x', mode: 'paste' }])

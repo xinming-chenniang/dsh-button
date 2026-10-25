@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { MAX_BUTTONS } from '../lib/buttons.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLIENT = join(HERE, '..', 'lib', 'client.js')
@@ -1140,6 +1141,73 @@ test('动作条按 side 分组：左侧也能放发送按钮（位置与动作�
     assert.equal(actionByLabel(leftGroup, '右填'), null, 'insert 但 side=right 的不在左组')
     assert.ok(actionByLabel(rightGroup, '右填'), '显式 side=right 的填入按钮在右组')
     assert.equal(actionByLabel(rightGroup, '左发'), null, 'send 但 side=left 的不在右组')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('容量：每侧最多显示 6 条，多出来的收进「⋯ 全部动作」，面板可搜索并直接执行', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  const many = Array.from({ length: 8 }, (_, i) => ({ label: `动作${i + 1}`, text: `文字${i + 1}` }))
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, buttons: many, hidden: ['continue'], presets: {} }) })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const visible = findAllWithClassToken(mounted.tree, 'dsh-custom-action')
+    assert.equal(visible.length, 6, '动作条每侧只显示 6 条')
+    const more = findByClass(mounted.tree, 'dsh-more-actions')
+    assert.ok(more, '有溢出时显示「⋯」入口')
+    assert.equal(more.children[0], '⋯ 2', '入口上标出被收起的条数')
+    // 打开面板：8 条都能找到
+    more.props.onClick()
+    assert.ok(findByClass(mounted.tree, 'dsh-action-panel'), '点开后有面板')
+    assert.equal(findAllByClass(mounted.tree, 'dsh-panel-action').length, 8, '面板列出全部动作（含溢出的）')
+    // 搜索过滤：按标签 / 文字都行
+    const search = findByClass(mounted.tree, 'dsh-action-panel-search')
+    search.props.onChange({ target: { value: '动作7' } })
+    assert.deepEqual(findAllByClass(mounted.tree, 'dsh-panel-action').map((item) => item.props['aria-label']), ['动作7'])
+    search.props.onChange({ target: { value: '文字8' } })
+    assert.deepEqual(findAllByClass(mounted.tree, 'dsh-panel-action').map((item) => item.props['aria-label']), ['动作8'])
+    search.props.onChange({ target: { value: '不存在' } })
+    assert.equal(findAllByClass(mounted.tree, 'dsh-panel-action').length, 0)
+    assert.ok(findByClass(mounted.tree, 'dsh-action-panel-list').children.some((child) => child?.children?.[0] === '没有匹配的动作'), '空结果有提示')
+    // 点面板里的一条：执行并关面板
+    search.props.onChange({ target: { value: '动作8' } })
+    findByClass(mounted.tree, 'dsh-panel-action').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '文字8'], ['submit']], '面板里的发送直接走发送逻辑')
+    assert.equal(findByClass(mounted.tree, 'dsh-action-panel'), null, '执行后关闭面板')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('容量：不超过 6 条时没有「⋯」入口；上限与宿主一致（40）', async () => {
+  const plugin = await loadPlugin()
+  const { MAX_CUSTOM, validateCustomRows } = plugin.__internals
+  assert.equal(MAX_CUSTOM, MAX_BUTTONS, '客户端上限必须与宿主 MAX_BUTTONS 一致')
+  assert.equal(MAX_CUSTOM, 40)
+  const rows = (n) => Array.from({ length: n }, (_, i) => ({ label: `b${i}`, text: 'x' }))
+  assert.equal(validateCustomRows(rows(MAX_CUSTOM)).ok, true, '40 条应当合法')
+  assert.equal(validateCustomRows(rows(MAX_CUSTOM + 1)).ok, false, '41 条应当被拒')
+
+  // 6 条时动作条全显示，没有「⋯」
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: Array.from({ length: 6 }, (_, i) => ({ label: `a${i}`, text: 'x' })), hidden: ['continue'], presets: {} }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    assert.equal(findAllWithClassToken(mounted.tree, 'dsh-custom-action').length, 6)
+    assert.equal(findByClass(mounted.tree, 'dsh-more-actions'), null, '没有溢出就不加「⋯」')
   } finally {
     globalThis.fetch = prevFetch
   }

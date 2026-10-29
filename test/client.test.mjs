@@ -77,14 +77,20 @@ function userMessage(seq, content, sourceKind = 'user') {
  * `entries` 是会话事件窗口（`binding.eventSource.getSnapshot().entries`）。
  * `insert` 非空时，给输入门面加上宿主的光标插入 API（`caretSpan` / `snapshot.draftRev` / `insertText` / `focus`）。
  */
-function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false, insert = null } = {}) {
+function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false, insert = null, sessionTitle = undefined, sessionModel = undefined } = {}) {
   const services = {
     sessions: {
       list: { getSnapshot: () => ({ ids: Object.keys(byId), byId }) },
       scope: (id) => ({ id }),
       binding: () => ({
         eventSource: { getSnapshot: () => ({ revision: 1, entries, hasMore: false }) },
-        session: { getSnapshot: () => ({ running }) },
+        session: {
+          getSnapshot: () => ({
+            running,
+            ...(sessionTitle === undefined ? {} : { title: sessionTitle }),
+            ...(sessionModel === undefined ? {} : { model: sessionModel }),
+          }),
+        },
       }),
     },
     conversation: {
@@ -337,42 +343,43 @@ test('老宿主留下的 state.current 仍然优先（两份取值路径都要�
 test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、上限与长度校验）', async () => {
   const plugin = await loadPlugin()
   const { blankCustomRow, validateCustomRows, MAX_CUSTOM } = plugin.__internals
-  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send', style: 'secondary', side: 'right' })
-  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert', style: 'ghost', side: 'left' })
+  assert.deepEqual(blankCustomRow(), { label: '', text: '', mode: 'send', source: 'static', style: 'secondary', side: 'right' })
+  assert.deepEqual(blankCustomRow('insert'), { label: '', text: '', mode: 'insert', source: 'static', style: 'ghost', side: 'left' })
   // 位置显式指定时以它为准（位置与动作解耦：左侧也可以是发送按钮）
-  assert.deepEqual(blankCustomRow('send', 'left'), { label: '', text: '', mode: 'send', style: 'secondary', side: 'left' })
+  assert.deepEqual(blankCustomRow('send', 'left'), { label: '', text: '', mode: 'send', source: 'static', style: 'secondary', side: 'left' })
   // 空行直接跳过，不要求用户自己删干净
   assert.deepEqual(validateCustomRows([
     { label: ' 收尾 ', text: ' 收尾 ' },
     blankCustomRow(),
   ]), {
     ok: true,
-    buttons: [{ label: '收尾', text: '收尾', mode: 'send', style: 'secondary', side: 'right' }],
+    buttons: [{ label: '收尾', text: '收尾', mode: 'send', source: 'static', style: 'secondary', side: 'right' }],
   })
   // mode 原样带上（编辑器按位置分区，位置与动作解耦）
   assert.deepEqual(validateCustomRows([{ label: '模板', text: 'x', mode: 'insert' }]), {
     ok: true,
-    buttons: [{ label: '模板', text: 'x', mode: 'insert', style: 'ghost', side: 'left' }],
+    buttons: [{ label: '模板', text: 'x', mode: 'insert', source: 'static', style: 'ghost', side: 'left' }],
   })
   // 外观原样带上；旧的 icon 字段已删除，行里带了也忽略
   assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', style: 'primary' }]), {
     ok: true,
-    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'primary', side: 'right' }],
+    buttons: [{ label: '主', text: 'x', mode: 'send', source: 'static', style: 'primary', side: 'right' }],
   })
   assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', icon: '🏁' }]), {
     ok: true,
-    buttons: [{ label: '主', text: 'x', mode: 'send', style: 'secondary', side: 'right' }],
+    buttons: [{ label: '主', text: 'x', mode: 'send', source: 'static', style: 'secondary', side: 'right' }],
   })
   // 位置显式指定时原样带上，与 mode 解耦（左侧的发送按钮合法）
   assert.deepEqual(validateCustomRows([{ label: '左发', text: 'x', side: 'left' }]), {
     ok: true,
-    buttons: [{ label: '左发', text: 'x', mode: 'send', style: 'secondary', side: 'left' }],
+    buttons: [{ label: '左发', text: 'x', mode: 'send', source: 'static', style: 'secondary', side: 'left' }],
   })
-  // 只填一半才报错，并指明第几条
+  // 只填一半才报错；报错用「侧别 + 标签」，并提示可以改来源
   const labelOnly = validateCustomRows([{ label: '只有标签', text: '' }])
   assert.equal(labelOnly.ok, false)
-  assert.match(labelOnly.message, /第 1 条/)
-  assert.match(labelOnly.message, /文字/)
+  assert.match(labelOnly.message, /「只有标签」/)
+  assert.match(labelOnly.message, /静态文字不能为空/)
+  assert.match(labelOnly.message, /来源/)
   assert.equal(validateCustomRows([{ label: '', text: '只有文字' }]).ok, false)
   // 上限与长度
   const tooMany = Array.from({ length: MAX_CUSTOM + 1 }, (_, i) => ({ label: `b${i}`, text: 'x' }))
@@ -380,7 +387,7 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   assert.equal(validateCustomRows([{ label: 'a'.repeat(30), text: 'x' }]).ok, false)
   assert.equal(validateCustomRows([{ label: 'a', text: 'x'.repeat(600) }]).ok, false)
   // 不带 "=" 的标签也合法（旧的行格式要求已取消）
-  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send', style: 'secondary', side: 'right' }] })
+  assert.deepEqual(validateCustomRows([{ label: 'a=b', text: 'x' }]), { ok: true, buttons: [{ label: 'a=b', text: 'x', mode: 'send', source: 'static', style: 'secondary', side: 'right' }] })
 })
 
 test("删掉的预设不渲染（hidden=['continue']），重发仍在", async () => {
@@ -535,6 +542,47 @@ test('自定义按钮：编辑器里 ↑↓ 手动调整顺序，保存后按新
       ['丙', '乙', '甲'],
       '保存后按钮条按新顺序渲染',
     )
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('动作条：成功路径不弹状态（填入看输入框、发送看界面）；失败才提示且不撑宽按钮', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '讨论', text: '只讨论', mode: 'insert' }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  const mountWith = async (insert) => {
+    const ctx = makeCtx({ calls: [], draft: '', insert })
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    return { mounted: mountDock(ctx) }
+  }
+  try {
+    // 成功填入：输入框里看得见，不该弹任何状态
+    const okRun = await mountWith({ caret: [0, 0], draftRev: 0 })
+    actionByLabel(okRun.mounted.tree, '讨论').props.onClick({})
+    const afterOk = actionByLabel(okRun.mounted.tree, '讨论')
+    assert.equal(afterOk.children.length, 1, '成功后按钮里只有一个文本子节点（没状态）')
+    assert.equal(findByClass(afterOk, 'dsh-action-status'), null, '成功路径不弹状态标签')
+
+    // 失败（宿主拒绝）：必须出声，且是绝对定位的小标签，不参与布局
+    const failRun = await mountWith({ caret: [0, 0], draftRev: 1, applied: false })
+    actionByLabel(failRun.mounted.tree, '讨论').props.onClick({})
+    const afterFail = actionByLabel(failRun.mounted.tree, '讨论')
+    const pill = findByClass(afterFail, 'dsh-action-status')
+    assert.ok(pill, '失败要提示')
+    assert.equal(pill.props.style.position, 'absolute', '绝对定位：按钮宽度不变，不触发换行')
+    assert.equal(afterFail.props.style.position, 'relative', '按钮是标签的定位容器')
+    assert.equal(afterFail.children[0], '讨论', '标签文本里不拼状态')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -784,8 +832,8 @@ test('编辑器：动作按「左侧 / 右侧」两区分开；保存带上每�
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(posts.length, 1)
     assert.deepEqual(posts[0].buttons, [
-      { label: '甲', text: 'a', mode: 'send', style: 'secondary', side: 'right' },
-      { label: '乙', text: 'b', mode: 'insert', style: 'ghost', side: 'left' },
+      { label: '甲', text: 'a', mode: 'send', source: 'static', style: 'secondary', side: 'right' },
+      { label: '乙', text: 'b', mode: 'insert', source: 'static', style: 'ghost', side: 'left' },
     ], '每条按钮的位置与方式都要原样落盘')
     assert.deepEqual(posts[0].hidden, ['continue'])
   } finally {
@@ -1270,7 +1318,7 @@ test('动作条按 side 分组：左侧也能放发送按钮（位置与动作�
       ok: true,
       buttons: [
         { label: '左发', text: 'a', side: 'left' },
-        { label: '右填', text: 'b', mode: 'insert', side: 'right' },
+        { label: '右填', text: 'b', mode: 'insert', source: 'static', side: 'right' },
       ],
       hidden: ['continue'],
       presets: {},
@@ -1783,4 +1831,349 @@ test('控制行：左组保存后右组重挂，外观立即生效（不用重�
     if (prevStorage === undefined) delete globalThis.localStorage
     else globalThis.localStorage = prevStorage
   }
+})
+
+// ── 档 2：来源选择器（last-user / draft / selection + {{value}} 模板） ──────────────
+
+test('档 2：resolveActionText 读静态 / 上一条 / 草稿 / 选区，并套模板', async () => {
+  const plugin = await loadPlugin()
+  const { resolveActionText, lastUserMessage, selectionText } = plugin.__internals
+
+  // 静态来源：配置里的文字（执行时才解码换行）
+  assert.deepEqual(resolveActionText(makeCtx(), { text: '第一行\\n第二行' }), { ok: true, text: '第一行\n第二行' })
+
+  // 上一条：只认 user/message + source.kind === 'user'（注入/引用/压缩检查点不算）
+  const entries = [
+    userMessage(1, '更早的一条'),
+    userMessage(2, '被注入的', 'inject'),
+    { event: { type: 'user/message', seq: 3, data: { content: '最后一条', source: { kind: 'user' } } } },
+  ]
+  const lastCtx = makeCtx({ entries })
+  assert.equal(lastUserMessage(lastCtx), '最后一条')
+  assert.deepEqual(resolveActionText(lastCtx, { source: 'last-user' }), { ok: true, text: '最后一条' })
+  assert.deepEqual(resolveActionText(lastCtx, { source: 'last-user', text: '重发：{{value}}' }), { ok: true, text: '重发：最后一条' })
+  // 模板里没有占位符 = 固定文字（用户写的字原样保留）
+  assert.deepEqual(resolveActionText(lastCtx, { source: 'last-user', text: '请继续' }), { ok: true, text: '请继续' })
+
+  // content 是数组时只收 text 块（reasoning / tool-call 不是输入框里的内容）
+  const arrayCtx = makeCtx({
+    entries: [{
+      event: {
+        type: 'user/message',
+        seq: 4,
+        data: { source: { kind: 'user' }, message: { content: [{ type: 'reasoning', text: '想' }, { type: 'text', text: '正文' }] } },
+      },
+    }],
+  })
+  assert.equal(lastUserMessage(arrayCtx), '正文')
+
+  // 草稿来源：读当前草稿
+  assert.deepEqual(resolveActionText(makeCtx({ draft: '半句草稿' }), { source: 'draft' }), { ok: true, text: '半句草稿' })
+
+  // 选区来源：caretSpan 里的文字
+  const selCtx = makeCtx({ draft: '选中这段文字', insert: { caret: [0, 4], draftRev: 1 } })
+  const input = selCtx.get('conversation').input.for({ id: 's' })
+  assert.equal(selectionText(input), '选中这段')
+  assert.deepEqual(resolveActionText(selCtx, { source: 'selection', text: '解释：{{value}}' }), { ok: true, text: '解释：选中这段' })
+
+  // 读不到内容 → no-source；没有会话 → no-session
+  assert.deepEqual(resolveActionText(makeCtx({ draft: '' }), { source: 'draft' }), { ok: false, why: 'no-source' })
+  assert.deepEqual(resolveActionText(makeCtx({ byId: {} }), { source: 'last-user' }), { ok: false, why: 'no-session' })
+})
+
+test('档 2：上一条来源 + 发送 = 重发上一条', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+
+  const calls = []
+  const ctx = makeCtx({ calls, entries: [userMessage(1, '上一条内容')] })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '重发', text: '', source: 'last-user', mode: 'send' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '重发').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['setDraft', '上一条内容'],
+      ['submit'],
+    ])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：草稿来源 + 发送 = 直接提交草稿（不经过 setDraft）', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '已经写好的草稿' })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '发草稿', text: '', source: 'draft', mode: 'send' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '发草稿').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['submit']], '草稿来源直接提交，不经过 setDraft')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：选区来源 + 填入 = 用模板替换选区', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '请解释这段：甲', insert: { caret: [0, 5], draftRev: 7 } })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '解释', text: '讨论：{{value}}', source: 'selection', mode: 'insert' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '解释').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['insertText', '讨论：请解释这段', { start: 0, end: 5, draftRev: 7 }],
+      ['focus'],
+    ])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：来源取不到内容时提示「没有可用的内容」，并且不调用宿主', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const calls = []
+  const ctx = makeCtx({ calls, entries: [] })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '重发', text: '', source: 'last-user', mode: 'send' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '重发').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [], '没有内容时不能往宿主里塞空消息')
+    const pill = findByClass(mounted.tree, 'dsh-action-status')
+    assert.ok(pill, '应当出现状态提示')
+    assert.equal(pill.children[0], '没有可用的内容')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：编辑器有来源下拉（八选一）；动态来源的文字框是模板占位；保存带上 source', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const posts = []
+  const base = {
+    buttons: [{ label: '重发', text: '{{value}}', source: 'last-user', mode: 'send' }],
+    hidden: ['continue'],
+    presets: {},
+  }
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const select = findByClass(mounted.tree, 'dsh-custom-source')
+    assert.ok(select, '编辑器每行都有来源下拉')
+    assert.deepEqual(select.children.map((option) => option.props.value), ['static', 'last-user', 'last-assistant', 'draft', 'selection', 'session-title', 'model', 'time'])
+    const textInput = findByClass(mounted.tree, 'dsh-custom-text-input')
+    assert.match(String(textInput.props.placeholder), /\{\{value\}\}/, '动态来源时文字框是模板占位')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(posts[0].buttons[0].source, 'last-user', '保存时把来源一起落盘')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：动作按钮的 mousedown 不夺输入框焦点（保住选区）', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '选中', text: '', source: 'selection', mode: 'insert' }] }),
+  })
+  try {
+    const ctx = makeCtx({ draft: '选中文字', insert: { caret: [0, 4], draftRev: 1 } })
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '选中')
+    assert.ok(button, '应当渲染选中按钮')
+    assert.equal(typeof button.props.onMouseDown, 'function', '按钮要挂 mousedown 处理器')
+    let prevented = false
+    button.props.onMouseDown({ preventDefault: () => { prevented = true } })
+    assert.equal(prevented, true, 'mousedown 必须 preventDefault，否则输入框失焦、选区折叠')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：选区来源没有选区时提示「没有可用的内容」，不调用宿主', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const calls = []
+  // 光标折叠（start === end）：没有选区
+  const ctx = makeCtx({ calls, draft: '文字', insert: { caret: [2, 2], draftRev: 1 } })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '选中', text: '', source: 'selection', mode: 'insert' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '选中').props.onClick()
+    // 选区折叠时会把焦点还给输入框再读一次（可能多一次 focus），但**不能**往宿主里写任何东西
+    const writes = calls.filter((call) => ['setDraft', 'submit', 'insertText'].includes(call[0]))
+    assert.deepEqual(writes, [], '没有选区时不能往宿主里塞字')
+    const pill = findByClass(mounted.tree, 'dsh-action-status')
+    assert.ok(pill, '应当出现状态提示')
+    assert.equal(pill.children[0], '没有可用的内容')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：选区来源 + 空模板时，文字框占位直接提示「会被替换成它自己」', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '选中', text: '', source: 'selection', mode: 'insert' }] }),
+  })
+  try {
+    const ctx = makeCtx()
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    const input = findByClass(mounted.tree, 'dsh-custom-text-input')
+    assert.match(String(input.props.placeholder), /替换成它自己/, '空模板的选区按钮必须先告诉用户「无变化」')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('档 2：页面选区（选中历史对话）+ 填入 = 取文本插入光标处', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const prevGetSel = globalThis.getSelection
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '草稿', insert: { caret: [0, 0], draftRev: 3 } })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '引用', text: '针对这段：{{value}}', source: 'selection', mode: 'insert' }] }),
+  })
+  globalThis.getSelection = () => ({ toString: () => '历史对话里的一段' })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '引用')
+    // 点击本身可能把页面选区清掉：mousedown 先存一份
+    button.props.onMouseDown({ preventDefault() {} })
+    globalThis.getSelection = () => ({ toString: () => '' })
+    button.props.onClick()
+    const inserts = calls.filter((call) => call[0] === 'insertText')
+    assert.deepEqual(inserts, [['insertText', '针对这段：历史对话里的一段', { start: 0, end: 0, draftRev: 3 }]])
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevGetSel === undefined) delete globalThis.getSelection
+    else globalThis.getSelection = prevGetSel
+  }
+})
+
+test('档 2：页面选区 + 发送 = 把选中的历史文字作为消息发出', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const prevGetSel = globalThis.getSelection
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '' })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '发这段', text: '', source: 'selection', mode: 'send' }] }),
+  })
+  globalThis.getSelection = () => ({ toString: () => '这段历史文字' })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '发这段')
+    button.props.onMouseDown({ preventDefault() {} })
+    globalThis.getSelection = () => ({ toString: () => '' })
+    button.props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['setDraft', '这段历史文字'],
+      ['submit'],
+    ])
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevGetSel === undefined) delete globalThis.getSelection
+    else globalThis.getSelection = prevGetSel
+  }
+})
+
+test('档 2：上一条 AI 回答 / 会话标题 / 当前模型 / 本地时间都能当来源', async () => {
+  const plugin = await loadPlugin()
+  const { resolveActionText, lastAssistantMessage } = plugin.__internals
+
+  const assistant = (seq, text) => ({
+    event: {
+      type: 'assistant/message',
+      seq,
+      data: { message: { role: 'assistant', content: [{ type: 'reasoning', text: '思考' }, { type: 'text', text }] } },
+    },
+  })
+  const ctx = makeCtx({
+    entries: [userMessage(1, '问题'), assistant(2, '回答正文')],
+    sessionTitle: '我的会话',
+    sessionModel: { name: 'deepseek-chat' },
+  })
+  assert.equal(lastAssistantMessage(ctx), '回答正文', '只收 text 块，跳过 reasoning')
+  assert.deepEqual(resolveActionText(ctx, { source: 'last-assistant' }), { ok: true, text: '回答正文' })
+  assert.deepEqual(resolveActionText(ctx, { source: 'last-assistant', text: '接着这条说：{{value}}' }), { ok: true, text: '接着这条说：回答正文' })
+  assert.deepEqual(resolveActionText(ctx, { source: 'session-title' }), { ok: true, text: '我的会话' })
+  assert.deepEqual(resolveActionText(ctx, { source: 'model' }), { ok: true, text: 'deepseek-chat' })
+
+  // 本地时间：直接可读，格式 YYYY-MM-DD HH:mm
+  const time = resolveActionText(makeCtx(), { source: 'time' })
+  assert.equal(time.ok, true)
+  assert.match(time.text, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+
+  // 宿主没暴露标题 / 模型 → no-source（提示「没有可用的内容」，不猜）
+  assert.deepEqual(resolveActionText(makeCtx(), { source: 'session-title' }), { ok: false, why: 'no-source' })
+  assert.deepEqual(resolveActionText(makeCtx(), { source: 'model' }), { ok: false, why: 'no-source' })
 })

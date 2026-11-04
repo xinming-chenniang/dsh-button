@@ -25,13 +25,13 @@
 dsh plugin --profile <你的profile> add dsh-button
 ```
 
-从 GitHub 装也可以（钉在已发布的 `v1.3.2`）：
+从 GitHub 装也可以（钉在已发布的 `v1.3.3`）：
 
 ```powershell
-dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.2
+dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.3
 ```
 
-`#v1.3.2` 不要省：不钉版本会取仓库的 `main`，可能和已发布版本有差异。
+`#v1.3.3` 不要省：不钉版本会取仓库的 `main`，可能和已发布版本有差异。
 
 装完要重启 DSH。客户端插件是启动时加载的，刷新页面不会生效。
 
@@ -254,7 +254,7 @@ npm test
 
 ## 变更
 
-看 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.3.2**。
+看 [CHANGELOG.md](CHANGELOG.md)。当前版本 **1.3.3**。
 
 问题反馈：[GitHub Issues](https://github.com/xinming-chenniang/dsh-button/issues)。MIT License。
 

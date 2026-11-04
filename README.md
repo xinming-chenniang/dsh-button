@@ -142,8 +142,8 @@ dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.
 
 设置里的「按钮大小」有三档（高度按 Primer / Fluent 的控件阶梯 24 / 28 / 32 校准）：
 
-- 紧凑 24px（左右内边距 8px、字号 12px）
-- 标准 28px（默认；左右内边距 10px、字号 12px）
+- 紧凑 24px（默认；左右内边距 8px、字号 12px）
+- 标准 28px（左右内边距 10px、字号 12px）
 - 大 32px（左右内边距 12px、字号 13px、圆角 8px）
 
 只影响动作条按钮；设置面板里的控件保持标准尺寸。选择记在浏览器 localStorage 里，不写配置文件。

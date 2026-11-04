@@ -90,6 +90,14 @@ function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, e
             ...(sessionTitle === undefined ? {} : { title: sessionTitle }),
             ...(sessionModel === undefined ? {} : { model: sessionModel }),
           }),
+          // 宿主的真实公开面：当前模型在 `modelSelection` 投影里（next 优先，lastUsed 兜底）
+          projections: {
+            faceOf: (key) => ({
+              getSnapshot: () => (key === 'modelSelection' && sessionModel !== undefined
+                ? { next: { provider: 'deepseek', model: typeof sessionModel === 'string' ? sessionModel : sessionModel?.name } }
+                : {}),
+            }),
+          },
         },
       }),
     },

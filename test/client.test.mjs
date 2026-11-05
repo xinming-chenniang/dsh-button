@@ -2185,3 +2185,119 @@ test('档 2：上一条 AI 回答 / 会话标题 / 当前模型 / 本地时间�
   assert.deepEqual(resolveActionText(makeCtx(), { source: 'session-title' }), { ok: false, why: 'no-source' })
   assert.deepEqual(resolveActionText(makeCtx(), { source: 'model' }), { ok: false, why: 'no-source' })
 })
+
+test('模板占位符：名字去重、`value` 是保留名、填值替换（缺值 = 空）', async () => {
+  const plugin = await loadPlugin()
+  const { placeholderNamesOf, fillPlaceholders } = plugin.__internals
+
+  assert.deepEqual(placeholderNamesOf('总结 {{file}}，再看 {{file}} 和 {{value}}'), ['file'], '同名只出现一次，value 不算')
+  assert.deepEqual(placeholderNamesOf('{{ 文件名 }} {{a-b}} {{x_1}}'), ['文件名', 'a-b', 'x_1'], '中文名、连字符、下划线都认；两端空格忽略')
+  assert.deepEqual(placeholderNamesOf('{{value}}'), [], '只有保留名时没有可填项')
+  assert.deepEqual(placeholderNamesOf('没有占位符'), [])
+  assert.deepEqual(placeholderNamesOf(''), [])
+  assert.deepEqual(placeholderNamesOf(undefined), [], '非字符串按空处理')
+
+  assert.equal(fillPlaceholders('总结 {{file}}', { file: 'a.js' }), '总结 a.js')
+  assert.equal(fillPlaceholders('a {{x}} b {{y}}', { x: '1' }), 'a 1 b ', '没给值的替换成空')
+  assert.equal(fillPlaceholders('{{value}} 与 {{v}}', { v: '2' }), '{{value}} 与 2', 'value 原样留着')
+  assert.equal(fillPlaceholders('{{x}}', { x: 1 }), '', '非字符串值不参与替换')
+})
+
+test('模板占位符：点按钮先弹填参面板，填完才发送', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '总结文件', text: '总结 {{file}} 这个文件' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '总结文件')
+    assert.ok(button, '自定义按钮应当渲染出来')
+
+    button.props.onClick()
+    assert.deepEqual(calls, [], '有占位符时不应立刻发送')
+    const input = findByClass(mounted.tree, 'dsh-fill-input')
+    assert.ok(input, '应弹出填参面板')
+    assert.equal(input.props['data-placeholder-name'], 'file', '输入框按占位符名字生成')
+
+    input.props.onChange({ target: { value: 'a.js' } })
+    findByClass(mounted.tree, 'dsh-fill-ok').props.onClick()
+    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '总结 a.js 这个文件'], ['submit']], '填完才发送，且替换进模板')
+    assert.equal(findByClass(mounted.tree, 'dsh-fill-panel'), null, '执行后面板关闭')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('模板占位符：控制行模式下右侧（发送类）按钮也能弹面板', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  const prevStorage = globalThis.localStorage
+  globalThis.localStorage = { getItem: () => 'bar', setItem: () => {} }
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '发一段', text: '给 {{who}} 发消息', mode: 'send' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // 右侧那一格组件自己的 useState 槽：面板必须在它里面出现（左右是两格独立组件）
+    const right = mountRegistration(ctx, `${PKG.name}:send`)
+    const button = actionByLabel(right.tree, '发一段')
+    assert.ok(button, '发送类按钮应渲染在右格')
+    button.props.onClick()
+    assert.deepEqual(calls, [], '有占位符时不应立刻发送')
+    const input = findByClass(right.tree, 'dsh-fill-input')
+    assert.ok(input, '右侧组件里也要挂填参面板')
+    input.props.onChange({ target: { value: '老王' } })
+    findByClass(right.tree, 'dsh-fill-ok').props.onClick()
+    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '给 老王 发消息'], ['submit']])
+  } finally {
+    globalThis.fetch = prevFetch
+    globalThis.localStorage = prevStorage
+  }
+})
+
+test('模板占位符：取消不执行；`{{value}}` 不触发面板', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '取消我', text: '{{thing}} 再想想' },
+        { label: '保留值', text: '原样 {{value}}' },
+      ],
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+
+    actionByLabel(mounted.tree, '取消我').props.onClick()
+    findByClass(mounted.tree, 'dsh-fill-input').props.onChange({ target: { value: 'x' } })
+    findByClass(mounted.tree, 'dsh-fill-cancel').props.onClick()
+    assert.deepEqual(calls, [], '取消后什么都不执行')
+    assert.equal(findByClass(mounted.tree, 'dsh-fill-panel'), null, '取消后面板关闭')
+
+    actionByLabel(mounted.tree, '保留值').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-fill-panel'), null, 'value 是保留名，不弹面板')
+    assert.deepEqual(calls, [['for', 'session-test'], ['setDraft', '原样 {{value}}'], ['submit']], '静态按钮里的 {{value}} 原样发出')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})

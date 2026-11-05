@@ -194,7 +194,7 @@ test('loadConfig：文件不存在 → 自带默认按钮；坏 JSON → 明确�
     assert.equal(fresh.ok, true)
     assert.equal(fresh.exists, false)
     assert.equal(fresh.buttons.length, DEFAULT_BUTTONS.length)
-    assert.deepEqual(fresh.buttons.map((b) => b.label), ['总结', '继续', '讨论', '说明', '解释'])
+    assert.deepEqual(fresh.buttons.map((b) => b.label), ['重发', '继续', '讨论', 'skill', '解释选中区域'])
     writeFileSync(file, '{ not json', 'utf8')
     const bad = loadConfig(file)
     assert.equal(bad.ok, false)

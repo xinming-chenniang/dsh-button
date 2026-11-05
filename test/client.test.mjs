@@ -2301,3 +2301,63 @@ test('模板占位符：取消不执行；`{{value}}` 不触发面板', async ()
     globalThis.fetch = prevFetch
   }
 })
+
+test('可发现性：编辑器「＋ 变量」插入 {{名字}}，并提示这条会先问什么', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '总结', text: '总结这一轮' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const addVar = findAllByClass(mounted.tree, 'dsh-add-var')[0]
+    assert.ok(addVar, '编辑器每行都有「＋ 变量」')
+    // 行顺序来自当前配置（默认按钮也在这份清单里），所以按文字定位目标行，别假设第 0 行。
+    const textInputs = findAllByClass(mounted.tree, 'dsh-custom-text-input')
+    const target = textInputs.findIndex((input) => input.props.value === '总结这一轮')
+    assert.ok(target >= 0, `找不到目标行，实际：${textInputs.map((i) => i.props.value).join(' | ')}`)
+    const addVars = findAllByClass(mounted.tree, 'dsh-add-var')
+    addVars[target].props.onClick()
+    const chips = findAllByClass(mounted.tree, 'dsh-var-chip')
+    assert.ok(chips.length >= 4, `展开后应给出常用名，实际 ${chips.length}`)
+    const file = chips.find((chip) => chip.props['data-var'] === '文件')
+    assert.ok(file, '应当有「文件」这一项')
+    file.props.onClick()
+
+    const textInput = findAllByClass(mounted.tree, 'dsh-custom-text-input')[target]
+    assert.equal(textInput.props.value, '总结这一轮{{文件}}', '插到文字末尾')
+    const hint = findByClass(mounted.tree, 'dsh-var-hint')
+    assert.ok(hint, '插了变量后行里要有提示')
+    assert.match(JSON.stringify(hint.children), /文件/, '提示里写出变量名')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('可发现性：带变量的按钮，悬浮提示里标出变量个数', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '总结文件', text: '总结 {{file}} 和 {{scope}}' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '总结文件')
+    assert.ok(button)
+    assert.match(button.props.title, /变量 2/, `标题应标出 2 个变量，实际：${button.props.title}`)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})

@@ -25,15 +25,15 @@
 dsh plugin --profile <你的profile> add dsh-button
 ```
 
-从 GitHub 装也可以（钉 `v1.3.0`）：
+从 GitHub 装也可以（钉 `v1.3.3`）：
 
 ```powershell
-dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.0
+dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.3
 ```
 
-`#v1.3.0` 不要省：不钉版本会取仓库的 `main`，可能和已发布版本有差异。
+`#v1.3.3` 不要省：不钉版本会取仓库的 `main`，可能和已发布版本有差异。
 
-GitHub 上的 Release 只到 `v1.3.0`；`v1.3.1` / `v1.3.2` 只发在 npm、tag 没补。要最新版走上面那条 npm 命令。
+`v1.3.1` / `v1.3.2` 只有 npm 包、没有对应的 tag 与 Release；要稳定版本走上面那条 npm 命令即可。
 
 装完要重启 DSH。客户端插件是启动时加载的，刷新页面不会生效。
 
@@ -292,7 +292,7 @@ npm test
 
 ## 变更
 
-看 [CHANGELOG.md](CHANGELOG.md)。npm `latest` 是 **1.3.2**；仓库 `main` 上是 **1.3.3**（未发布）。
+看 [CHANGELOG.md](CHANGELOG.md)。npm `latest` 与 GitHub Release 都是 **1.3.3**。
 
 问题反馈：[GitHub Issues](https://github.com/xinming-chenniang/dsh-button/issues)。MIT License。
 

@@ -2322,7 +2322,7 @@ test('编辑器：次要设置收进抽屉，默认收起，点开才露出', as
     assert.ok(metas().length > 0, '每行都有设置行')
     assert.ok(toggles().length > 0, '每行都有抽屉开关')
     assert.ok(metas().every((row) => row.props.style.display === 'none'), '默认全部收起')
-    assert.ok(toggles().some((t) => t.children.join('') === '▸ 填'), '收起时开关上显示方式徽标')
+    assert.ok(toggles().every((t) => t.children.join('') === '⚙'), '开关是设置图标')
 
     // 点目标行的开关（按行内文字定位，默认按钮也在清单里）
     const inputs = findAllByClass(mounted.tree, 'dsh-custom-text-input')
@@ -2330,7 +2330,7 @@ test('编辑器：次要设置收进抽屉，默认收起，点开才露出', as
     assert.ok(target >= 0)
     toggles()[target].props.onClick()
     assert.equal(metas()[target].props.style.display, 'flex', '点开后该行设置可见')
-    assert.equal(toggles()[target].children.join(''), '▾ 填')
+    assert.equal(toggles()[target].props['aria-expanded'], 'true', '展开后 aria-expanded=true')
 
     toggles()[target].props.onClick()
     assert.equal(metas()[target].props.style.display, 'none', '再点收起')

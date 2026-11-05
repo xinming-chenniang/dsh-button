@@ -2302,6 +2302,43 @@ test('模板占位符：取消不执行；`{{value}}` 不触发面板', async ()
   }
 })
 
+test('编辑器：次要设置收进抽屉，默认收起，点开才露出', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a', mode: 'insert' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    const metas = () => findAllByClass(mounted.tree, 'dsh-row-meta')
+    const toggles = () => findAllByClass(mounted.tree, 'dsh-row-toggle')
+    assert.ok(metas().length > 0, '每行都有设置行')
+    assert.ok(toggles().length > 0, '每行都有抽屉开关')
+    assert.ok(metas().every((row) => row.props.style.display === 'none'), '默认全部收起')
+    assert.ok(toggles().some((t) => t.children.join('') === '▸ 填'), '收起时开关上显示方式徽标')
+
+    // 点目标行的开关（按行内文字定位，默认按钮也在清单里）
+    const inputs = findAllByClass(mounted.tree, 'dsh-custom-text-input')
+    const target = inputs.findIndex((input) => input.props.value === 'a')
+    assert.ok(target >= 0)
+    toggles()[target].props.onClick()
+    assert.equal(metas()[target].props.style.display, 'flex', '点开后该行设置可见')
+    assert.equal(toggles()[target].children.join(''), '▾ 填')
+
+    toggles()[target].props.onClick()
+    assert.equal(metas()[target].props.style.display, 'none', '再点收起')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('可发现性：编辑器「＋ 变量」插入 {{名字}}，并提示这条会先问什么', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()

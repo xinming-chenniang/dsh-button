@@ -12,7 +12,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { apply } from '../lib/index.js'
-import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, validatePresets, MAX_BUTTONS, PRESET_IDS, DEFAULT_BUTTONS, DEFAULT_PRESETS } from '../lib/buttons.js'
+import { apply as applyTools } from '../lib/tools.js'
+import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, validatePresets, runButtonsAction, MAX_BUTTONS, PRESET_IDS, DEFAULT_BUTTONS, DEFAULT_PRESETS } from '../lib/buttons.js'
 
 const ROUTE = '/api/dsh-button/buttons'
 
@@ -377,5 +378,93 @@ test('POST 路由：动态来源保存后原样返回（source 与模板都不�
     assert.equal(res.out.payload.buttons[0].source, 'last-user')
     assert.equal(res.out.payload.buttons[0].text, '{{value}}')
     assert.equal(loadConfig(file).buttons[0].source, 'last-user')
+  })
+})
+
+// ---------------------------------------------------------------- 工具半部
+
+test('工具：list 读默认值；add / remove / save 与界面同一条路径', async () => {
+  await withConfigFile(async ({ file }) => {
+    // 文件不存在 → 默认的 5 条，defaults=true
+    const listed = runButtonsAction({ action: 'list' })
+    assert.equal(listed.ok, true)
+    assert.equal(listed.defaults, true)
+    assert.equal(listed.buttons.length, DEFAULT_BUTTONS.length)
+    assert.equal(listed.path, resolve(file))
+
+    // add：追加一条并落盘
+    const added = runButtonsAction({ action: 'add', button: { label: '跑测试', text: '运行全部测试并修复失败项' } })
+    assert.equal(added.ok, true, JSON.stringify(added))
+    assert.equal(added.buttons.length, DEFAULT_BUTTONS.length + 1)
+    assert.equal(added.added.label, '跑测试')
+    assert.equal(loadConfig(file).buttons.at(-1).label, '跑测试')
+    assert.equal(loadConfig(file).buttons.at(-1).mode, 'send', '省略 mode = send')
+
+    // add 非法：缺文字 → 报错且不改文件
+    const before = readFileSync(file, 'utf8')
+    const bad = runButtonsAction({ action: 'add', button: { label: '空的', text: '' } })
+    assert.equal(bad.ok, false)
+    assert.equal(bad.error, 'bad-buttons')
+    assert.equal(readFileSync(file, 'utf8'), before, '校验失败不得写盘')
+
+    // remove 按标签
+    const removed = runButtonsAction({ action: 'remove', label: '跑测试' })
+    assert.equal(removed.ok, true, JSON.stringify(removed))
+    assert.equal(removed.removed.label, '跑测试')
+    assert.equal(loadConfig(file).buttons.length, DEFAULT_BUTTONS.length)
+
+    // remove 不存在 → not-found
+    assert.equal(runButtonsAction({ action: 'remove', label: '根本没有' }).error, 'not-found')
+
+    // 同名歧义 → ambiguous，且提示给 index
+    runButtonsAction({ action: 'add', button: { label: '重名', text: 'a' } })
+    runButtonsAction({ action: 'add', button: { label: '重名', text: 'b' } })
+    const ambiguous = runButtonsAction({ action: 'remove', label: '重名' })
+    assert.equal(ambiguous.error, 'ambiguous')
+    const byIndex = runButtonsAction({ action: 'remove', index: loadConfig(file).buttons.findIndex((b) => b.label === '重名') })
+    assert.equal(byIndex.ok, true, JSON.stringify(byIndex))
+    assert.equal(loadConfig(file).buttons.filter((b) => b.label === '重名').length, 1)
+
+    // save：整表覆盖（只留一条）
+    const saved = runButtonsAction({ action: 'save', buttons: [{ label: '唯一', text: '只有我', mode: 'insert' }] })
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    const after = loadConfig(file).buttons
+    assert.equal(after.length, 1)
+    assert.equal(after[0].label, '唯一')
+    assert.equal(after[0].mode, 'insert')
+    assert.equal(after[0].side, 'left', 'insert 默认在左')
+
+    // 未知 action
+    assert.equal(runButtonsAction({ action: 'nope' }).error, 'unknown-action')
+  })
+})
+
+test('工具：apply 注册 dsh_button，execute 直通 runButtonsAction', async () => {
+  await withConfigFile(async () => {
+    const registered = []
+    const ctx = {
+      get: (name) => (name === 'tools' ? { register: (definition) => { registered.push(definition); return () => {} } } : undefined),
+      effect: (fn) => fn(),
+    }
+    applyTools(ctx)
+    assert.equal(registered.length, 1, '应当注册一个工具')
+    const tool = registered[0]
+    assert.equal(tool.name, 'dsh_button')
+    assert.equal(tool.parameters.properties.action.enum.join(','), 'list,add,remove,save')
+    assert.equal(tool.parameters.properties.button.required.join(','), 'label,text')
+
+    const value = await tool.execute({ action: 'list' })
+    assert.equal(value.ok, true)
+    assert.equal(value.buttons.length, DEFAULT_BUTTONS.length)
+
+    // 渲染出来是一段文本（不是 undefined）
+    const rendered = tool.output.render({ action: 'list' }, value)
+    assert.equal(rendered[0].type, 'text')
+    assert.match(rendered[0].text, /button\(s\)/)
+
+    // 没有 tools 服务时不注册、不抛
+    const silent = []
+    applyTools({ get: () => undefined, effect: (fn) => fn() })
+    assert.equal(silent.length, 0)
   })
 })

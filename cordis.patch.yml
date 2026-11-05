@@ -1,6 +1,14 @@
 # dsh-button：输入框那一排的动作（独立客户端插件；自定义按钮配置由宿主半部读写）。
 #
-# insert 行的 id / name **必须等于包名**，否则静默装载不上（见 dsh-kb-sync 的 INSTALL-PATH 教训）。
+# insert 行的 id / name **必须等于包名**（或包名/子路径），否则静默装载不上
+# （见 dsh-kb-sync 的 INSTALL-PATH 教训）。
+#
+# 为什么拆两条 entry：cordis 的 inject 是"必需服务"，缺了它整个 entry 保持 pending、apply() 不执行。
+#   dsh-button       路由半（inject: webServer）—— 界面读写配置
+#   dsh-button-tools 工具半（inject: tools）—— agent 用 dsh_button 读写同一份配置
+# 写在一起的话，没有 Web 服务的 profile 里工具就一起废了（dsh-outcomes 第 14 轮实测）。
 - insert:
     - id: dsh-button
       name: 'dsh-button'
+    - id: dsh-button-tools
+      name: 'dsh-button/tools'

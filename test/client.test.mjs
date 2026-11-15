@@ -1432,7 +1432,7 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     const menu = findByClass(mounted.tree, 'dsh-custom-menu')
-    menu.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80 }) } })
+    menu.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } })
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
     assert.ok(panel, '点开后出现菜单')
     // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，左边 = 按钮左边，宽高由 min/max 三重钉死
@@ -1457,6 +1457,36 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     // 点背景关闭
     findByClass(mounted.tree, 'dsh-menu-backdrop').props.onClick()
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点背景关闭菜单')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('菜单按钮：贴近屏幕顶端时改成向下展开（否则会把叠压得很矮）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '选项', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: 'A', text: 'a' }, { label: 'B', text: 'b' }] }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    // 按钮在顶部：上方只有 30px，放不下两三项 → 翻到下方
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick({
+      currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 30, width: 80, height: 28 }) },
+    })
+    const panel = findByClass(mounted.tree, 'dsh-menu-panel')
+    assert.equal(panel.props.style.top, '64px', '翻到按钮下方 6px（30 + 28 + 6）')
+    assert.equal(panel.props.style.bottom, undefined, '不再用 bottom 定位')
   } finally {
     globalThis.fetch = prevFetch
   }

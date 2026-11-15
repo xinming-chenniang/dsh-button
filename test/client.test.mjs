@@ -1435,10 +1435,12 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     menu.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80 }) } })
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
     assert.ok(panel, '点开后出现菜单')
-    // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，右边缘跟按钮右边缘对齐（1024 − 580）
+    // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，左边 = 按钮左边，宽高由 min/max 三重钉死
     assert.equal(panel.props.style.bottom, '174px', '整叠底边在按钮上方 6px')
-    assert.equal(panel.props.style.right, '444px', '右边缘对齐按钮右边缘')
+    assert.equal(panel.props.style.left, '500px', '左边缘对齐按钮左边缘')
     assert.equal(panel.props.style.width, '80px', '整叠与触发按钮等宽，不会往左凸出去')
+    assert.equal(panel.props.style.minWidth, '80px', 'min-width 也钉死：内容再长也撑不宽')
+    assert.equal(panel.props.style.maxWidth, '80px', 'max-width 也钉死')
     assert.equal(panel.props.style.background, 'transparent', '外层不是面板：透明底、无边框')
     // 选项就是动作条同款按钮，不是列表行
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')

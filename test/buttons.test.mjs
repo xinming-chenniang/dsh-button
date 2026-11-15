@@ -436,6 +436,64 @@ test('菜单按钮：超 8 项 / 选项缺文字 / 选项标签超长 都明确�
   assert.match(longLabel.message, /标签超过 12 字/)
 })
 
+test('set_options：只改目标那条的选项，其它按钮逐字不变', async () => {
+  await withConfigFile(async ({ file }) => {
+    const base = [
+      { label: '收尾', text: '收尾', mode: 'send', source: 'static', style: 'secondary', side: 'right' },
+      { label: '选项', text: '', mode: 'send', kind: 'menu', items: [{ label: '旧', text: '旧', mode: 'send' }], at: '2026-11-01T00:00:00.000Z', source: 'static', style: 'secondary', side: 'right' },
+      { label: '继续', text: '继续', mode: 'send', source: 'static', style: 'secondary', side: 'right' },
+    ]
+    saveConfig(base, [], DEFAULT_PRESETS, file)
+    const res = runButtonsAction({
+      action: 'set_options',
+      label: '选项',
+      items: [{ label: '落盘', text: '写进文件' }, { label: '只看差异', text: '--dry', mode: 'insert' }],
+    }, { file })
+    assert.equal(res.ok, true)
+    assert.equal(res.target, 1)
+    assert.deepEqual(res.updated.items.map((i) => i.label), ['落盘', '只看差异'])
+    assert.equal(res.updated.items[1].mode, 'insert')
+    assert.notEqual(res.updated.at, '2026-11-01T00:00:00.000Z', 'at 默认更新成现在')
+    // 其它两条逐字不变
+    const after = loadConfig(file).buttons
+    assert.deepEqual(after[0], base[0])
+    assert.deepEqual(after[2], base[2])
+    assert.equal(after.length, 3, '不新增也不删除')
+  })
+})
+
+test('set_options：items 传空数组 = 摘掉菜单，退回普通按钮', async () => {
+  await withConfigFile(async ({ file }) => {
+    saveConfig([
+      { label: '选项', text: '普通文字', mode: 'send', kind: 'menu', items: [{ label: 'A', text: 'a', mode: 'send' }], at: '2026-11-15T00:00:00.000Z', source: 'static', style: 'secondary', side: 'right' },
+    ], [], DEFAULT_PRESETS, file)
+    const res = runButtonsAction({ action: 'set_options', label: '选项', items: [] }, { file })
+    assert.equal(res.ok, true)
+    assert.equal('items' in res.updated, false)
+    assert.equal('kind' in res.updated, false)
+    assert.equal(res.updated.text, '普通文字')
+  })
+})
+
+test('set_options：缺 items / 找不到按钮 / 同名歧义 都明确报错', async () => {
+  await withConfigFile(async ({ file }) => {
+    saveConfig([{ label: 'A', text: 'a' }, { label: 'A', text: 'b' }], [], DEFAULT_PRESETS, file)
+    const missing = runButtonsAction({ action: 'set_options', label: 'A' }, { file })
+    assert.equal(missing.ok, false)
+    assert.match(missing.message, /items/)
+    const notFound = runButtonsAction({ action: 'set_options', label: '不存在', items: [{ label: 'x', text: 'y' }] }, { file })
+    assert.equal(notFound.ok, false)
+    assert.equal(notFound.error, 'not-found')
+    const ambiguous = runButtonsAction({ action: 'set_options', label: 'A', items: [{ label: 'x', text: 'y' }] }, { file })
+    assert.equal(ambiguous.ok, false)
+    assert.equal(ambiguous.error, 'ambiguous')
+    // 给了 index 就能定位
+    const byIndex = runButtonsAction({ action: 'set_options', index: 1, items: [{ label: 'x', text: 'y' }] }, { file })
+    assert.equal(byIndex.ok, true)
+    assert.equal(byIndex.target, 1)
+  })
+})
+
 test('菜单按钮：写盘后原样读回（items / at 不丢）', async () => {
   await withConfigFile(async ({ file }) => {
     const menu = {
@@ -552,7 +610,7 @@ test('工具：apply 注册 dsh_button，execute 直通 runButtonsAction', async
     assert.equal(registered.length, 1, '应当注册一个工具')
     const tool = registered[0]
     assert.equal(tool.name, 'dsh_button')
-    assert.equal(tool.parameters.properties.action.enum.join(','), 'list,add,remove,save')
+    assert.equal(tool.parameters.properties.action.enum.join(','), 'list,add,remove,set_options,save')
     assert.equal(tool.parameters.properties.button.required.join(','), 'label,text')
 
     const value = await tool.execute({ action: 'list' })

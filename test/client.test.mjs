@@ -1438,6 +1438,7 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，右边缘跟按钮右边缘对齐（1024 − 580）
     assert.equal(panel.props.style.bottom, '174px', '整叠底边在按钮上方 6px')
     assert.equal(panel.props.style.right, '444px', '右边缘对齐按钮右边缘')
+    assert.equal(panel.props.style.width, '80px', '整叠与触发按钮等宽，不会往左凸出去')
     assert.equal(panel.props.style.background, 'transparent', '外层不是面板：透明底、无边框')
     // 选项就是动作条同款按钮，不是列表行
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')

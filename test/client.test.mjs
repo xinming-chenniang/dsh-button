@@ -1445,6 +1445,9 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     assert.equal(items.length, 1)
     assert.match(items[0].props.className, /dsh-custom-action/, '选项复用动作条按钮的类名')
     assert.match(items[0].props.className, /dsh-style-secondary/, '外观跟着触发按钮（secondary）')
+    assert.match(String(items[0].props.style.outline), /1px solid/, '展开项加内描边，与实底的触发按钮区分')
+    assert.equal(items[0].props.style.marginRight, 0, '竖排里去掉动作条按钮自带的右边距')
+    assert.equal(items[0].props.style.boxSizing, 'border-box', 'border-box：padding/边框不吃进宽度之外')
     // 点背景关闭
     findByClass(mounted.tree, 'dsh-menu-backdrop').props.onClick()
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点背景关闭菜单')

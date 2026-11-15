@@ -1413,6 +1413,39 @@ test('菜单按钮（档 6）：点开上拉选项，选一条才执行；旧选
   }
 })
 
+test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜单定位）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '选项', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: 'A', text: 'a' }] }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const menu = findByClass(mounted.tree, 'dsh-custom-menu')
+    menu.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80 }) } })
+    const panel = findByClass(mounted.tree, 'dsh-menu-panel')
+    assert.ok(panel, '点开后出现面板')
+    // 视口读不到时按 1024×768 算：底边贴在按钮上边 6px，横向跟按钮中心对齐
+    assert.equal(panel.props.style.bottom, '174px', '面板底边在按钮上方 6px')
+    assert.equal(panel.props.style.left, '408px', '横向以按钮中心对齐')
+    // 点背景关闭
+    findByClass(mounted.tree, 'dsh-menu-backdrop').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点背景关闭菜单')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('菜单按钮：编辑器往返不丢 items / at，且与宿主上限一致', async () => {
   const plugin = await loadPlugin()
   const { editorRowOf, storedRowOf, validateCustomRows, MAX_MENU_ITEMS: clientMax } = plugin.__internals

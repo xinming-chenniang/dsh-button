@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { apply } from '../lib/index.js'
 import { apply as applyTools } from '../lib/tools.js'
-import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, validatePresets, runButtonsAction, MAX_BUTTONS, PRESET_IDS, DEFAULT_BUTTONS, DEFAULT_PRESETS } from '../lib/buttons.js'
+import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, validatePresets, runButtonsAction, MAX_BUTTONS, MAX_LABEL, MAX_MENU_ITEMS, PRESET_IDS, DEFAULT_BUTTONS, DEFAULT_PRESETS } from '../lib/buttons.js'
 
 const ROUTE = '/api/dsh-button/buttons'
 
@@ -392,6 +392,68 @@ test('validateConfig：source 缺省 static；动态来源文字可空；未知�
   assert.match(bad.message, /来源/)
   // 静态来源仍然必须有文字
   assert.equal(validateConfig([{ label: 'x', source: 'static' }]).ok, false)
+})
+
+test('菜单按钮（档 6）：选项与写入时间原样保留，主按钮可以没有文字', () => {
+  const res = validateConfig([{
+    label: '选项',
+    kind: 'menu',
+    at: '2026-11-15T18:16:00+08:00',
+    items: [
+      { label: '落盘', text: '把结论写进信息食谱' },
+      { label: '只看差异', text: '重跑一次 --dry', mode: 'insert' },
+    ],
+  }])
+  assert.equal(res.ok, true)
+  assert.deepEqual(res.buttons[0], {
+    label: '选项',
+    text: '',
+    mode: 'send',
+    kind: 'menu',
+    items: [
+      { label: '落盘', text: '把结论写进信息食谱', mode: 'send' },
+      { label: '只看差异', text: '重跑一次 --dry', mode: 'insert' },
+    ],
+    at: '2026-11-15T18:16:00+08:00',
+    source: 'static',
+    style: 'secondary',
+    side: 'right',
+  })
+  // 普通按钮不写 kind（存盘形状与以前逐字一致）
+  assert.equal('kind' in validateConfig([{ label: '普通', text: 'x' }]).buttons[0], false)
+})
+
+test('菜单按钮：超 8 项 / 选项缺文字 / 选项标签超长 都明确报错', () => {
+  const many = { label: '多', items: Array.from({ length: MAX_MENU_ITEMS + 1 }, (_, i) => ({ label: `项${i}`, text: `t${i}` })) }
+  const over = validateConfig([many])
+  assert.equal(over.ok, false)
+  assert.match(over.message, /最多 8 项/)
+  const missing = validateConfig([{ label: '缺', items: [{ label: '没文字' }] }])
+  assert.equal(missing.ok, false)
+  assert.match(missing.message, /每个选项都要有标签和文字/)
+  const longLabel = validateConfig([{ label: '长', items: [{ label: '一'.repeat(MAX_LABEL + 1), text: 'x' }] }])
+  assert.equal(longLabel.ok, false)
+  assert.match(longLabel.message, /标签超过 12 字/)
+})
+
+test('菜单按钮：写盘后原样读回（items / at 不丢）', async () => {
+  await withConfigFile(async ({ file }) => {
+    const menu = {
+      label: '选项',
+      text: '',
+      mode: 'send',
+      kind: 'menu',
+      items: [{ label: 'A', text: 'a', mode: 'send' }],
+      at: '2026-11-15T18:16:00+08:00',
+      source: 'static',
+      style: 'secondary',
+      side: 'right',
+    }
+    saveConfig([menu], [], DEFAULT_PRESETS, file)
+    const loaded = loadConfig(file)
+    assert.equal(loaded.ok, true)
+    assert.deepEqual(loaded.buttons, [menu])
+  })
 })
 
 test('saveConfig / loadConfig：source 往返（动态来源与模板原样读回）', async () => {

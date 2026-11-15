@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_BUTTONS } from '../lib/buttons.js'
+import { MAX_BUTTONS, MAX_MENU_ITEMS } from '../lib/buttons.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLIENT = join(HERE, '..', 'lib', 'client.js')
@@ -1366,6 +1366,77 @@ test('动作条按 side 分组：左侧也能放发送按钮（位置与动作�
   } finally {
     globalThis.fetch = prevFetch
   }
+})
+
+test('菜单按钮（档 6）：点开上拉选项，选一条才执行；旧选项带「·旧」提示', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  const staleAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{
+        label: '选项',
+        text: '',
+        mode: 'send',
+        kind: 'menu',
+        at: staleAt,
+        side: 'left',
+        items: [{ label: '落盘', text: '写进去' }, { label: '只看差异', text: '只看差异', mode: 'insert' }],
+      }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const menu = findByClass(mounted.tree, 'dsh-custom-menu')
+    assert.ok(menu, '菜单按钮带 dsh-custom-menu 类')
+    assert.equal(menu.props['aria-haspopup'], 'menu')
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [], '只点开、不执行')
+    menu.props.onClick()
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '点开后出现选项面板')
+    const items = findAllByClass(mounted.tree, 'dsh-menu-item')
+    assert.equal(items.length, 2, '面板列出全部选项')
+    assert.match(String(findByClass(mounted.tree, 'dsh-menu-meta').children.join('')), /写于 24 小时前/, '超过 24h 标「·旧」')
+    items[0].props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '写进去'], ['submit']], '选中的那条按 send 执行')
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '执行后关闭面板')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('菜单按钮：编辑器往返不丢 items / at，且与宿主上限一致', async () => {
+  const plugin = await loadPlugin()
+  const { editorRowOf, storedRowOf, validateCustomRows, MAX_MENU_ITEMS: clientMax } = plugin.__internals
+  assert.equal(clientMax, MAX_MENU_ITEMS, '客户端上限必须与宿主 MAX_MENU_ITEMS 一致')
+  const menu = {
+    label: '选项',
+    text: '',
+    mode: 'send',
+    kind: 'menu',
+    items: [{ label: 'A', text: 'a', mode: 'send' }],
+    at: '2026-11-15T18:16:00+08:00',
+    source: 'static',
+    side: 'left',
+  }
+  const row = editorRowOf(menu, 'zh')
+  assert.deepEqual(row.items, menu.items, '菜单选项进编辑器行')
+  assert.equal(row.at, menu.at)
+  const back = storedRowOf(row)
+  assert.deepEqual(back.items, menu.items, '保存时折回存盘格式，选项不丢')
+  assert.equal(back.at, menu.at)
+  const checked = validateCustomRows([back])
+  assert.equal(checked.ok, true, '菜单行允许没有主文字')
+  assert.equal(checked.buttons[0].kind, 'menu')
+  assert.deepEqual(checked.buttons[0].items, menu.items)
 })
 
 test('容量：每侧最多显示 6 条，多出来的收进「⋯ 全部动作」，面板可搜索并直接执行', async () => {

@@ -1437,20 +1437,21 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     assert.ok(panel, '点开后出现菜单')
     // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，左边 = 按钮左边，宽高由 min/max 三重钉死
     assert.equal(panel.props.style.bottom, '174px', '整叠底边在按钮上方 6px')
-    // 外框左右各外扩 4px（内边距），内边距收掉之后按钮内容区仍与触发按钮严格重合
-    assert.equal(panel.props.style.left, '496px', '外框左边缘 = 按钮左边 − 4px 内边距')
-    assert.equal(panel.props.style.width, '88px', '外框 = 按钮宽 + 两侧 4px 内边距')
-    assert.equal(panel.props.style.minWidth, '88px', 'min-width 也钉死：内容再长也撑不宽')
-    assert.equal(panel.props.style.maxWidth, '88px', 'max-width 也钉死')
-    assert.equal(panel.props.style.padding, '4px', '内边距 4px：内容区回到按钮宽度')
-    assert.match(String(panel.props.style.background), /Canvas 82%/, '有很淡的浮层底，不再是全透明')
-    assert.match(String(panel.props.style.backdropFilter), /blur/, '浮层底带背景模糊')
+    // 外框透明（不要浮层面板），左右边与触发按钮严格重合
+    assert.equal(panel.props.style.left, '500px', '左边缘对齐按钮左边缘')
+    assert.equal(panel.props.style.width, '80px', '整叠与触发按钮等宽')
+    assert.equal(panel.props.style.minWidth, '80px', 'min-width 钉死：内容再长也撑不宽')
+    assert.equal(panel.props.style.maxWidth, '80px', 'max-width 钉死')
+    assert.equal(panel.props.style.background, 'transparent', '外框透明：不做浮层底')
+    assert.equal(panel.props.style.backdropFilter, undefined, '没有背景模糊')
     // 选项就是动作条同款按钮，不是列表行
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')
     assert.equal(items.length, 1)
     assert.match(items[0].props.className, /dsh-custom-action/, '选项复用动作条按钮的类名')
     assert.match(items[0].props.className, /dsh-style-secondary/, '外观跟着触发按钮（secondary）')
-    assert.match(String(items[0].props.style.outline), /1px solid/, '展开项加内描边，与实底的触发按钮区分')
+    assert.match(String(items[0].props.style.outline), /1px solid/, '展开项加内描边，与触发按钮区分')
+    assert.match(String(items[0].props.style.background), /Canvas/, '按钮自己是不透明底色（混 Canvas），背后文字透不出来')
+    assert.doesNotMatch(String(items[0].props.style.background), /transparent/, '底色不混 transparent')
     assert.equal(items[0].props.style.marginRight, 0, '竖排里去掉动作条按钮自带的右边距')
     assert.equal(items[0].props.style.boxSizing, 'border-box', 'border-box：padding/边框不吃进宽度之外')
     // 点背景关闭

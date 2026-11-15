@@ -149,7 +149,7 @@ test('MAX_BUTTONS：放宽到 40（溢出交给动作条「⋯」面板）', () 
   assert.equal(validateConfig(rows(41)).ok, false, '41 条应当被拒')
 })
 
-test('validateConfig：mode 只接受 send / insert，未知值明确报错', () => {
+test('validateConfig：mode 只接受 send / insert（旧 quote 折成 insert + quote），未知值明确报错', () => {
   assert.deepEqual(validateConfig([{ label: '模板', text: 'x', mode: 'insert' }]).buttons, [{ label: '模板', text: 'x', mode: 'insert', source: 'static', style: 'ghost', side: 'left' }])
   const bad = validateConfig([{ label: '模板', text: 'x', mode: 'paste' }])
   assert.equal(bad.ok, false)
@@ -159,6 +159,46 @@ test('validateConfig：mode 只接受 send / insert，未知值明确报错', ()
   const badPreset = validateConfig({ buttons: [], presets: { continue: { mode: 'steer' } } })
   assert.equal(badPreset.ok, false)
   assert.match(badPreset.message, /continue/)
+})
+
+test('validateConfig：quote（引用，与 mode 正交）—— 动态来源 + 空文字合法；静态来源与 {{value}} 被拒；旧 mode=quote 折算', () => {
+  const quote = validateConfig([{ label: '引用', text: '', mode: 'insert', quote: true, source: 'selection' }])
+  assert.equal(quote.ok, true)
+  assert.deepEqual(quote.buttons[0], { label: '引用', text: '', mode: 'insert', quote: true, source: 'selection', style: 'ghost', side: 'left' })
+
+  // 引用 + 发送：合法，外观 / 位置按发送派生
+  const send = validateConfig([{ label: '引用发', text: '解释：', mode: 'send', quote: true, source: 'last-assistant' }])
+  assert.equal(send.ok, true)
+  assert.deepEqual(send.buttons[0], { label: '引用发', text: '解释：', mode: 'send', quote: true, source: 'last-assistant', style: 'secondary', side: 'right' })
+
+  // 旧写法 mode: 'quote' → insert + quote
+  const legacy = validateConfig([{ label: '旧', text: '', mode: 'quote', source: 'selection' }])
+  assert.equal(legacy.ok, true)
+  assert.deepEqual(legacy.buttons[0], { label: '旧', text: '', mode: 'insert', quote: true, source: 'selection', style: 'ghost', side: 'left' })
+
+  // 非引用按钮不带 quote 字段（存盘形状不变）
+  assert.equal('quote' in validateConfig([{ label: 'a', text: 'x' }]).buttons[0], false)
+
+  const staticBad = validateConfig([{ label: '引用', text: '固定字', quote: true, source: 'static' }])
+  assert.equal(staticBad.ok, false)
+  assert.match(staticBad.message, /静态文字/)
+
+  const valueBad = validateConfig([{ label: '引用', text: '解释：{{value}}', quote: true, source: 'selection' }])
+  assert.equal(valueBad.ok, false)
+  assert.match(valueBad.message, /\{\{value\}\}/)
+})
+
+test('saveConfig / loadConfig：quote 往返不丢；旧 mode=quote 读入即折算', async () => {
+  await withConfigFile(async ({ file }) => {
+    saveConfig([
+      { label: '引用', text: '', mode: 'quote', source: 'selection', style: 'ghost', side: 'left' },
+      { label: '引用发', text: '解释：', mode: 'send', quote: true, source: 'last-assistant' },
+    ], [], DEFAULT_PRESETS, file)
+    assert.deepEqual(loadConfig(file).buttons, [
+      { label: '引用', text: '', mode: 'insert', quote: true, source: 'selection', style: 'ghost', side: 'left' },
+      { label: '引用发', text: '解释：', mode: 'send', quote: true, source: 'last-assistant', style: 'secondary', side: 'right' },
+    ])
+  })
 })
 
 test('validatePresets：缺省补默认值；自定义标签/文字有效；超长或换行报错', () => {

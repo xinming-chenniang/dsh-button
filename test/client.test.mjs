@@ -77,7 +77,7 @@ function userMessage(seq, content, sourceKind = 'user') {
  * `entries` 是会话事件窗口（`binding.eventSource.getSnapshot().entries`）。
  * `insert` 非空时，给输入门面加上宿主的光标插入 API（`caretSpan` / `snapshot.draftRev` / `insertText` / `focus`）。
  */
-function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false, insert = null, sessionTitle = undefined, sessionModel = undefined } = {}) {
+function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, entries = [], calls = [], draft = '', running = false, insert = null, sessionTitle = undefined, sessionModel = undefined, occurrences = null, quotes = null, quote = null } = {}) {
   const services = {
     sessions: {
       list: { getSnapshot: () => ({ ids: Object.keys(byId), byId }) },
@@ -106,18 +106,36 @@ function makeCtx({ byId = { 'session-test': { retainedBy: { mainView: 1 } } }, e
         for: (scope) => {
           calls.push(['for', scope.id])
           const api = {
-            draftSnapshot: { text: draft },
+            draftSnapshot: {
+              text: draft,
+              ...(occurrences === null ? {} : { references: occurrences }),
+              ...(quotes === null ? {} : { quotes }),
+            },
             setDraft: (text) => calls.push(['setDraft', text]),
             submit: () => calls.push(['submit']),
           }
           if (insert !== null) {
-            api.snapshot = { draftRev: insert.draftRev, phase: insert.phase }
+            api.snapshot = {
+              draftRev: insert.draftRev,
+              phase: insert.phase ?? 'plain',
+              ...(occurrences === null ? {} : { occurrences }),
+              ...(insert.claim === undefined ? {} : { claim: insert.claim }),
+            }
             api.caretSpan = () => ({ start: insert.caret[0], end: insert.caret[1] })
             api.insertText = (text, span) => {
               calls.push(['insertText', text, span])
               return insert.applied ?? true
             }
             api.focus = () => calls.push(['focus'])
+          }
+          // 宿主 0.2.2 的引用卡入口（provide 通道的动作面）：只有显式给了 `quote` 才挂。
+          if (quote !== null) {
+            api.actions = {
+              insertQuote: (text) => {
+                calls.push(['insertQuote', text])
+                return quote.applied ?? true
+              },
+            }
           }
           return api
         },
@@ -371,7 +389,7 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   // 外观原样带上；旧的 icon 字段已删除，行里带了也忽略
   assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', style: 'primary' }]), {
     ok: true,
-    buttons: [{ label: '主', text: 'x', mode: 'send', source: 'static', style: 'primary', side: 'right' }],
+    buttons: [{ label: '主', text: 'x', mode: 'send', source: 'static', style: 'secondary', side: 'right' }],
   })
   assert.deepEqual(validateCustomRows([{ label: '主', text: 'x', icon: '🏁' }]), {
     ok: true,
@@ -386,8 +404,8 @@ test('自定义按钮：表单行 → 配置（空行跳过、半空行报错、
   const labelOnly = validateCustomRows([{ label: '只有标签', text: '' }])
   assert.equal(labelOnly.ok, false)
   assert.match(labelOnly.message, /「只有标签」/)
-  assert.match(labelOnly.message, /静态文字不能为空/)
-  assert.match(labelOnly.message, /来源/)
+  assert.match(labelOnly.message, /文字不能为空/)
+  assert.match(labelOnly.message, /\{\}/)
   assert.equal(validateCustomRows([{ label: '', text: '只有文字' }]).ok, false)
   // 上限与长度
   const tooMany = Array.from({ length: MAX_CUSTOM + 1 }, (_, i) => ({ label: `b${i}`, text: 'x' }))
@@ -1160,6 +1178,8 @@ test('编辑器位置下拉：below→bar→below 换注册，localStorage 记�
     assert.equal(ctx.registrations.length, 1)
     const dock = mountDock(ctx)
     findByClass(dock.tree, 'dsh-custom-manage').props.onClick()
+    assert.equal(findByClass(dock.tree, 'dsh-layout-select'), null, '显示选项默认收起')
+    findByClass(dock.tree, 'dsh-display-toggle').props.onClick()
     const select = findByClass(dock.tree, 'dsh-layout-select')
     assert.ok(select, '编辑器里应当有位置下拉')
     assert.equal(select.props.value, 'below')
@@ -1169,6 +1189,7 @@ test('编辑器位置下拉：below→bar→below 换注册，localStorage 记�
 
     const left = mountRegistration(ctx, `${PKG.name}:insert`)
     findByClass(left.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(left.tree, 'dsh-display-toggle').props.onClick()
     findByClass(left.tree, 'dsh-layout-select').props.onChange({ target: { value: 'below' } })
     assert.equal(ctx.registrations.length, 1)
     assert.equal(ctx.registrations[0].options.id, `${PKG.name}:actions`)
@@ -1472,6 +1493,7 @@ test('模型实验开关：勾选后写 localStorage 并强制收起', async () 
     plugin.apply(ctx)
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(mounted.tree, 'dsh-display-toggle').props.onClick()
     const checkbox = findByClass(mounted.tree, 'dsh-model-compact')
     assert.ok(checkbox, '编辑器里应当有模型收起开关')
     assert.equal(checkbox.props.checked, true)
@@ -1516,6 +1538,7 @@ test('按钮大小三档：写 localStorage、加根属性、动作条用 CSS �
     plugin.apply(ctx)
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(mounted.tree, 'dsh-display-toggle').props.onClick()
     const select = findByClass(mounted.tree, 'dsh-size-select')
     assert.ok(select, '设置里应当有按钮大小')
     assert.equal(select.props.value, 'compact')
@@ -1557,15 +1580,11 @@ test('外观：四种语义样式各自成型；旧 icon 字段不再渲染', as
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const tree = mountDock(ctx).tree
+    // 外观固定（2026-11-10）：配置里写的 style 不再生效，一律按方式派生。
     const primary = actionByLabel(tree, '主')
-    assert.equal(primary.props.style.background, 'var(--dsw-alias-state-business-primary, #4d6bfe)', '主色 = 实底')
-    assert.equal(primary.props.style.color, '#fff')
-    const danger = actionByLabel(tree, '危')
-    assert.equal(danger.props.style.color, '#e5484d', '警示 = 红字')
-    assert.match(String(danger.props.style.background), /#e5484d/)
-    const ghost = actionByLabel(tree, '线')
-    assert.equal(ghost.props.style.borderStyle, 'solid', '描边 = 实线边（虚线改掉了）')
-    assert.equal(ghost.props.style.background, 'transparent', '描边 = 透明底')
+    assert.match(String(primary.props.className), /dsh-style-secondary/, '旧 style: primary 被忽略')
+    assert.match(String(actionByLabel(tree, '危').props.className), /dsh-style-secondary/, '旧 style: danger 被忽略')
+    assert.match(String(actionByLabel(tree, '线').props.className), /dsh-style-secondary/, '发送类 = 浅底，哪怕写了 ghost')
     const plain = actionByLabel(tree, '默认')
     assert.equal(plain.props.style.borderStyle, 'solid', '不写外观时发送类 = 实线')
     assert.match(String(plain.props.style.background), /color-mix/)
@@ -1574,7 +1593,8 @@ test('外观：四种语义样式各自成型；旧 icon 字段不再渲染', as
     assert.ok(legacyIcon, '旧配置里带 icon 的按钮仍应渲染（icon 已被忽略）')
     assert.equal(legacyIcon.children[0], '带图', '旧 icon 字段不再拼到标签前')
     assert.equal(legacyIcon.props.style.borderStyle, 'solid', 'insert 缺省 = 中性描边')
-    assert.match(String(primary.props.className), /dsh-style-primary/, 'class 上带样式 token')
+    assert.equal(legacyIcon.props.style.background, 'transparent', '填入 = 透明底描边')
+    assert.match(String(legacyIcon.props.className), /dsh-style-ghost/, 'class 上带样式 token')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -1608,7 +1628,7 @@ test('Ctrl + 点击：填入类直接发送；普通点击仍只填光标处', a
   }
 })
 
-test('编辑器：外观下拉跟着行值；图标字段与预览框都已移除', async () => {
+test('编辑器：外观固定（没有外观下拉）；图标字段与预览框都已移除', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const prevFetch = globalThis.fetch
@@ -1623,13 +1643,10 @@ test('编辑器：外观下拉跟着行值；图标字段与预览框都已移�
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
     assert.equal(findByClass(mounted.tree, 'dsh-custom-icon-input'), null, '图标输入框已删除')
-    assert.equal(findByClass(mounted.tree, 'dsh-custom-style').props.value, 'secondary', '每行应有外观下拉')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-style'), null, '外观下拉已移除')
     // A 风格定稿后预览框整体删除：DOM 里不该再有任何预览节点
     assert.equal(findByClass(mounted.tree, 'dsh-editor-preview'), null, '预览框已移除')
     assert.equal(findAllWithClassToken(mounted.tree, 'dsh-preview-action').length, 0, '不再渲染预览按钮')
-    // 改外观：下拉值跟着行走（不再有预览来间接证明）
-    findByClass(mounted.tree, 'dsh-custom-style').props.onChange({ target: { value: 'danger' } })
-    assert.equal(findByClass(mounted.tree, 'dsh-custom-style').props.value, 'danger', '外观下拉跟着行值走')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -1816,10 +1833,10 @@ test('控制行：左组保存后右组重挂，外观立即生效（不用重�
     const regsOf = (id) => ctx.registrations.filter((item) => item.options.id === id)
     const oldSend = regsOf('dsh-button:send')[0]
     assert.ok(oldSend, '控制行应注册右组')
-    // 编辑器从 ⋮（左组）打开，把「甲」的外观改成警示，保存
+    // 编辑器从 ⋮（左组）打开，把「甲」改成填入（外观随方式变成描边），保存
     const left = mountRegistration(ctx, 'dsh-button:insert')
     findByClass(left.tree, 'dsh-custom-manage').props.onClick()
-    findByClass(left.tree, 'dsh-custom-style').props.onChange({ target: { value: 'danger' } })
+    findByClass(left.tree, 'dsh-mode-insert').props.onClick()
     findByClass(left.tree, 'dsh-custom-save').props.onClick()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -1833,7 +1850,7 @@ test('控制行：左组保存后右组重挂，外观立即生效（不用重�
     const right = mountComponent(sendAfter[0].component().children[0].type)
     const button = findByClass(right.tree, 'dsh-custom-action')
     assert.ok(button, '右组应当渲染「甲」')
-    assert.match(String(button.props.className), /dsh-style-danger/, '保存的外观立即在右组生效')
+    assert.match(String(button.props.className), /dsh-style-ghost/, '保存的方式（及派生外观）立即在右组生效')
   } finally {
     globalThis.fetch = prevFetch
     if (prevStorage === undefined) delete globalThis.localStorage
@@ -1983,12 +2000,15 @@ test('档 2：来源取不到内容时提示「没有可用的内容」，并且
   }
 })
 
-test('档 2：编辑器有来源下拉（八选一）；动态来源的文字框是模板占位；保存带上 source', async () => {
+test('变量化来源：编辑器没有来源下拉，来源显示成文字里的 {{变量}}；保存时折回 source + {{value}}', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
   const posts = []
   const base = {
-    buttons: [{ label: '重发', text: '{{value}}', source: 'last-user', mode: 'send' }],
+    buttons: [
+      { label: '重发', text: '', source: 'last-user', mode: 'send' },
+      { label: '解释', text: '解释：{{value}}', source: 'selection', mode: 'insert' },
+    ],
     hidden: ['continue'],
     presets: {},
   }
@@ -2007,15 +2027,19 @@ test('档 2：编辑器有来源下拉（八选一）；动态来源的文字框
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
-    const select = findByClass(mounted.tree, 'dsh-custom-source')
-    assert.ok(select, '编辑器每行都有来源下拉')
-    assert.deepEqual(select.children.map((option) => option.props.value), ['static', 'last-user', 'last-assistant', 'draft', 'selection', 'session-title', 'model', 'time'])
-    const textInput = findByClass(mounted.tree, 'dsh-custom-text-input')
-    assert.match(String(textInput.props.placeholder), /\{\{value\}\}/, '动态来源时文字框是模板占位')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-source'), null, '来源下拉已经去掉')
+    assert.equal(findByClass(mounted.tree, 'dsh-quote-toggle'), null, '没有独立的引用开关')
+    assert.equal(findByClass(mounted.tree, 'dsh-quote-source'), null, '没有「引用什么」下拉')
+    const texts = findAllByClass(mounted.tree, 'dsh-custom-text-input').map((input) => input.props.value)
+    assert.deepEqual(texts.sort(), ['{{上一条}}', '解释：{{选中}}'].sort(), '来源摊成文字里的变量')
 
     findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(posts[0].buttons[0].source, 'last-user', '保存时把来源一起落盘')
+    const saved = posts[0].buttons.map(({ label, text, source }) => ({ label, text, source }))
+    assert.deepEqual(saved, [
+      { label: '重发', text: '', source: 'last-user' },
+      { label: '解释', text: '解释：{{value}}', source: 'selection' },
+    ], '存盘格式与旧配置逐字一致')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -2072,22 +2096,182 @@ test('档 2：选区来源没有选区时提示「没有可用的内容」，不
   }
 })
 
-test('档 2：选区来源 + 空模板时，文字框占位直接提示「会被替换成它自己」', async () => {
+test('变量化来源：editorRowOf / storedRowOf 往返；主变量优先选中 > 草稿；旧 quote 折算成引用变量', async () => {
+  const plugin = await loadPlugin()
+  const { editorRowOf, storedRowOf, placeholderNamesOf } = plugin.__internals
+  const pick = ({ text, source, mode }) => ({ text, source, mode })
+  // 往返：旧配置 → 编辑器 → 存盘，逐字不变
+  for (const b of [
+    { label: 'a', text: '', source: 'last-user', mode: 'send' },
+    { label: 'b', text: '解释：{{value}}', source: 'selection', mode: 'insert' },
+    { label: 'c', text: '固定', mode: 'send' },
+    { label: 'd', text: '', source: 'time', mode: 'insert' },
+  ]) {
+    const back = storedRowOf(editorRowOf(b))
+    assert.deepEqual(pick(back), pick({ source: 'static', ...b }), `往返：${b.label}`)
+  }
+  // 旧 mode=quote / quote:true → 折算成文字里的引用变量（不再有 quote 字段）
+  assert.deepEqual(pick(storedRowOf(editorRowOf({ label: 'f', text: '', source: 'selection', mode: 'quote' }))),
+    { text: '{{引用选中}}', source: 'static', mode: 'insert' })
+  assert.deepEqual(pick(storedRowOf(editorRowOf({ label: 'g', text: '解释这段', source: 'last-assistant', quote: true, mode: 'send' }))),
+    { text: '{{引用AI回答}}\\n\\n解释这段', source: 'static', mode: 'send' })
+  // 旧「引用草稿」没有对应变量（自己抄自己），兜底成引用选中
+  assert.equal(storedRowOf(editorRowOf({ label: 'h', text: '', source: 'draft', quote: true })).text, '{{引用选中}}')
+  // 两个内置变量：选中当主变量，时间留在文字里（运行时自动读）；引用变量不折 source
+  assert.deepEqual(pick(storedRowOf({ text: '{{时间}} 解释 {{选中}}', mode: 'insert' })),
+    { text: '{{时间}} 解释 {{value}}', source: 'selection', mode: 'insert' })
+  assert.deepEqual(pick(storedRowOf({ text: '{{引用选中}} 解释 {{选中}}', mode: 'insert' })),
+    { text: '{{引用选中}} 解释 {{value}}', source: 'selection', mode: 'insert' })
+  // 英文别名也认
+  assert.deepEqual(pick(storedRowOf({ text: 'Explain {{selection}}', mode: 'insert' })),
+    { text: 'Explain {{value}}', source: 'selection', mode: 'insert' })
+  // 内置变量 / 引用变量都不算「要问你填」的
+  assert.deepEqual(placeholderNamesOf('{{选中}} {{时间}} {{引用选中}} {{文件}}'), ['文件'])
+})
+
+test('编辑器：引用不是开关/下拉，而是 `{}` 菜单里的「引用块」变量；插到文字开头', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const posts = []
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [{ label: '解释', text: '解释：{{value}}', source: 'last-assistant', mode: 'insert' }],
+    hidden: ['continue'],
+    presets: {},
+  }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    assert.equal(findByClass(mounted.tree, 'dsh-quote-toggle'), null, '没有独立开关')
+    assert.equal(findByClass(mounted.tree, 'dsh-quote-source'), null, '没有「引用什么」下拉')
+    assert.deepEqual([...new Set(findAllWithClassToken(mounted.tree, 'dsh-mode-option').map((o) => o.children.join('')))], ['发', '填'], '方式只有发 / 填')
+
+    findByClass(mounted.tree, 'dsh-add-var').props.onClick()
+    const chips = findAllWithClassToken(mounted.tree, 'dsh-var-chip')
+    assert.deepEqual(chips.map((chip) => chip.props['data-var']),
+      ['selection', 'last-user', 'last-assistant', 'draft', 'session-title', 'model', 'time',
+        'quote:selection', 'quote:last-user', 'quote:last-assistant', 'custom'], '自动读取七个 + 引用块三个 + 问我一个')
+    chips.find((chip) => chip.props['data-var'] === 'quote:last-assistant').props.onClick()
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-text-input').props.value,
+      '{{引用AI回答}}\\n\\n解释：{{AI回答}}', '引用变量放开头，空行接提示')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(posts[0].buttons.map(({ label, text, source }) => ({ label, text, source })), [
+      { label: '解释', text: '{{引用AI回答}}\\n\\n解释：{{value}}', source: 'last-assistant' },
+    ], '引用变量留在文字里，只有主变量折回 source')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('引用变量 + 发送：整段（引用块 + 提示）一次提交，不走宿主 insertQuote；有草稿不发送', async () => {
   const plugin = await loadPlugin()
   const prevFetch = globalThis.fetch
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ ok: true, buttons: [{ label: '选中', text: '', source: 'selection', mode: 'insert' }] }),
+    json: async () => ({ ok: true, buttons: [{ label: '引用发', text: '{{引用AI回答}}\\n\\n解释这段', mode: 'send' }] }),
+  })
+  const assistant = { event: { type: 'assistant/message', seq: 2, data: { message: { role: 'assistant', content: [{ type: 'text', text: '回答正文' }] } } } }
+  try {
+    const calls = []
+    const ctx = makeCtx({ calls, entries: [assistant], quote: {}, insert: { caret: [0, 0], draftRev: 1 } })
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    actionByLabel(mountDock(ctx).tree, '引用发').props.onClick()
+    const seen = calls.filter((call) => call[0] !== 'for')
+    assert.deepEqual(seen.map((call) => call[0]).filter((name) => name === 'insertQuote'), [], '不走宿主 insertQuote')
+    assert.deepEqual(seen[0], ['setDraft', '> 回答正文\n\n解释这段'], '引用块 + 提示作为一条消息文字')
+    assert.equal(seen[seen.length - 1][0], 'submit', '最后提交')
+
+    const calls2 = []
+    const busy = makeCtx({ calls: calls2, entries: [assistant], quote: {}, draft: '我写了一半' })
+    plugin.apply(busy)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    actionByLabel(mountDock(busy).tree, '引用发').props.onClick()
+    assert.deepEqual(calls2.filter((call) => call[0] !== 'for'), [], '有草稿：不发送')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('引用变量：读不到内容时整次不执行，状态「没有可用的内容」（不发一条空 ">"）', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '引用', text: '{{引用选中}}', mode: 'send' }] }),
   })
   try {
-    const ctx = makeCtx()
+    const calls = []
+    const ctx = makeCtx({ calls, draft: '' })
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
-    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
-    const input = findByClass(mounted.tree, 'dsh-custom-text-input')
-    assert.match(String(input.props.placeholder), /替换成它自己/, '空模板的选区按钮必须先告诉用户「无变化」')
+    actionByLabel(mounted.tree, '引用').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [], '没有可引用的内容就什么都不做')
+    assert.equal(findByClass(mounted.tree, 'dsh-action-status').children[0], '没有可用的内容')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('变量化来源：第二个内置变量在点击时自动读取，不弹填参面板', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const calls = []
+  const ctx = makeCtx({ calls, sessionModel: 'deepseek-chat' })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '报模型', text: '当前是 {{模型}}', mode: 'send' }] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '报模型').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] === 'setDraft'), [['setDraft', '当前是 deepseek-chat']])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('变量化来源：{{草稿}} 包住草稿——填入整段替换、发送包好再提交', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const calls = []
+  const ctx = makeCtx({ calls, draft: 'hello' })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [
+      { label: '包', text: '翻译：{{value}}', source: 'draft', mode: 'insert' },
+      { label: '包发', text: '翻译：{{value}}', source: 'draft', mode: 'send' },
+    ] }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    actionByLabel(mounted.tree, '包').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '翻译：hello']], '填入 = 整段替换，不提交')
+    calls.length = 0
+    actionByLabel(mounted.tree, '包发').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '翻译：hello'], ['submit']], '发送 = 包好再提交')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -2153,6 +2337,227 @@ test('档 2：页面选区 + 发送 = 把选中的历史文字作为消息发出
     else globalThis.getSelection = prevGetSel
   }
 })
+
+// ── 草稿两套坐标：detect（结构节点折 1 格）↔ clipboard（结构节点展开）────────────────
+//
+// 宿主 `caretSpan()` 给 detect 坐标，`draftSnapshot.text` 是 clipboard 投影。草稿里有
+// `@文件` chip / `/命令` chip / 引用卡时两套偏移不等价；1.3.3 直接混用，读数会切成 chip 尾巴、
+// 多行填入会插错位置（2026-11-09 离线复现）。这组用例钉住折算与「chip 不被摊平」。
+
+/** 一枚 `@文件` chip：clipboard 里 10 个字符（`@docs/a.md`），detect 里只占 1 个。 */
+const FILE_CHIP = { source: 'reference', ref: '@docs/a.md', label: 'a.md', clipboardText: '@docs/a.md', offset: 0, length: 10, appearance: 'file' }
+
+test('坐标：含 chip 的草稿，选区读取按 clipboard 折算', async () => {
+  const plugin = await loadPlugin()
+  const { selectionText } = plugin.__internals
+  // clipboard = "@docs/a.md hello"；detect = "￼ hello"（chip 折 1 格）
+  const input = {
+    draftSnapshot: { text: '@docs/a.md hello', references: [FILE_CHIP] },
+    snapshot: { draftRev: 1, phase: 'plain', occurrences: [FILE_CHIP] },
+    caretSpan: () => ({ start: 2, end: 7 }),
+  }
+  assert.equal(selectionText(input), 'hello', 'detect 2..7 先折成 clipboard 12..17，才是 hello')
+})
+
+test('坐标：选区来源套模板时用的是折算后的文字', async () => {
+  const plugin = await loadPlugin()
+  const { resolveActionText } = plugin.__internals
+  const ctx = makeCtx({ draft: '@docs/a.md hello', occurrences: [FILE_CHIP], insert: { caret: [2, 7], draftRev: 1 } })
+  assert.deepEqual(resolveActionText(ctx, { source: 'selection', text: '解释：{{value}}' }), { ok: true, text: '解释：hello' })
+})
+
+test('坐标：多行填入写结构化草稿，chip 不被摊平', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '@docs/a.md hello', occurrences: [FILE_CHIP], insert: { caret: [2, 7], draftRev: 7 } })
+  const result = plugin.__internals.insertAtCaret(ctx, '解释：\n第二行')
+  assert.deepEqual(result, { ok: true })
+  assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+    ['setDraft', { text: '@docs/a.md 解释：\n第二行', references: [FILE_CHIP] }],
+    ['focus'],
+  ], '插入后 chip 的 offset/length 原样保留（纯字符串 setDraft 会把它摊平）')
+})
+
+test('坐标：引用卡（quotes）在多行填入后仍在，位置按插入长度平移', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const quote = { offset: 5, length: 3, text: '引用' }
+  // clipboard = "hello" + 引用卡(clipboard 3 字) + "!"；detect = "hello￼!"，caret 5 = 引用卡之前
+  const ctx = makeCtx({ calls, draft: 'helloQRS!', quotes: [quote], insert: { caret: [5, 5], draftRev: 4 } })
+  const result = plugin.__internals.insertAtCaret(ctx, 'X\nY')
+  assert.deepEqual(result, { ok: true, fallback: true }, '插在草稿中间：宿主 setDraft 会把光标放到末尾（状态文案据此说「已填入末尾」）')
+  assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+    ['setDraft', { text: 'helloX\nYQRS!', references: [], quotes: [{ offset: 8, length: 3, text: '引用' }] }],
+    ['focus'],
+  ])
+})
+
+test('坐标：已认领的 /命令 chip 折 1 格，命令 chip 在填入后保留', async () => {
+  const plugin = await loadPlugin()
+  const { selectionText } = plugin.__internals
+  const token = '/goal '
+  const input = {
+    draftSnapshot: { text: '/goal 把这事做完', references: [] },
+    snapshot: { draftRev: 3, phase: 'claimed', claim: { token }, occurrences: [] },
+    // detect = "￼ 把这事做完"：命令 chip 1 格 + 尾部分隔空格 + 5 个字
+    caretSpan: () => ({ start: 2, end: 7 }),
+  }
+  assert.equal(selectionText(input), '把这事做完')
+
+  const calls = []
+  const ctx = makeCtx({
+    calls,
+    draft: '/goal 把这事做完',
+    occurrences: [],
+    insert: { caret: [7, 7], draftRev: 3, phase: 'claimed', claim: { token } },
+  })
+  plugin.__internals.insertAtCaret(ctx, 'X\nY')
+  assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+    ['setDraft', { text: '/goal 把这事做完X\nY', references: [], command: { token } }],
+    ['focus'],
+  ], '命令 chip 由宿主按 token 还原，不要退化成字面文字')
+})
+
+test('坐标：没有结构节点（纯文本草稿 / 老宿主）仍写纯字符串，行为与 1.3.3 一致', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls, draft: 'hello', insert: { caret: [5, 5], draftRev: 2 } })
+  plugin.__internals.insertAtCaret(ctx, 'A\nB')
+  assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+    ['setDraft', 'helloA\nB'],
+    ['focus'],
+  ])
+
+  // 新宿主：字段在、但数组是空的 —— 同样走纯字符串（等价路径，不依赖结构化 setDraft）
+  const calls2 = []
+  const ctx2 = makeCtx({ calls: calls2, draft: 'hello', occurrences: [], quotes: [], insert: { caret: [5, 5], draftRev: 2 } })
+  plugin.__internals.insertAtCaret(ctx2, 'A\nB')
+  assert.deepEqual(calls2.filter((call) => call[0] !== 'for'), [
+    ['setDraft', 'helloA\nB'],
+    ['focus'],
+  ])
+})
+
+// ── 引用并入变量：`{{引用选中}}` 就是文字，发出去是 Markdown 引用块 ─────────────────
+
+test('引用变量：原文逐行写成 "> " 引用块；空行留 ">"', async () => {
+  const plugin = await loadPlugin()
+  const { formatQuoted } = plugin.__internals
+  assert.equal(formatQuoted('一行'), '> 一行')
+  assert.equal(formatQuoted('两行\n第二行'), '> 两行\n> 第二行', '多行逐行加')
+  assert.equal(formatQuoted('a\r\n\r\nb'), '> a\n>\n> b', 'CRLF 归一，空行也是引用块的一行')
+  assert.equal(formatQuoted(''), '>')
+})
+
+test('引用变量 + 填入：插入引用块文字到光标，不提交', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  const prevGetSel = globalThis.getSelection
+  const calls = []
+  const ctx = makeCtx({ calls, draft: '', insert: { caret: [0, 0], draftRev: 3 } })
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '引用', text: '{{引用选中}}', mode: 'insert' }] }),
+  })
+  globalThis.getSelection = () => ({ toString: () => '历史原文' })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const button = actionByLabel(mounted.tree, '引用')
+    // 点击会清掉页面选区：mousedown 先存一份
+    button.props.onMouseDown({ preventDefault() {} })
+    globalThis.getSelection = () => ({ toString: () => '' })
+    button.props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['insertText', '> 历史原文', { start: 0, end: 0, draftRev: 3 }],
+      ['focus'],
+    ], '引用块就是普通文字，走宿主光标插入')
+  } finally {
+    globalThis.fetch = prevFetch
+    if (prevGetSel === undefined) delete globalThis.getSelection
+    else globalThis.getSelection = prevGetSel
+  }
+})
+
+test('校验：旧 quote 行折算成引用变量；客户端不再产出 quote 字段', async () => {
+  const plugin = await loadPlugin()
+  const { blankCustomRow, validateCustomRows } = plugin.__internals
+  assert.deepEqual(blankCustomRow('quote'), { label: '', text: '', mode: 'send', source: 'static', style: 'secondary', side: 'right' }, '没有 quote 点法了')
+  assert.deepEqual(validateCustomRows([{ label: '引用', text: '', mode: 'quote', source: 'selection' }]), {
+    ok: true,
+    buttons: [{ label: '引用', text: '{{引用选中}}', mode: 'insert', source: 'static', style: 'ghost', side: 'left' }],
+  })
+  assert.deepEqual(validateCustomRows([{ label: '引用', text: '{{引用AI回答}}\\n\\n解释', mode: 'send' }]), {
+    ok: true,
+    buttons: [{ label: '引用', text: '{{引用AI回答}}\\n\\n解释', mode: 'send', source: 'static', style: 'secondary', side: 'right' }],
+  })
+})
+
+test('编辑器：旧 mode=quote 按钮显示成文字里的 {{引用…}}，保存成普通按钮', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const posts = []
+  const prevFetch = globalThis.fetch
+  const base = {
+    buttons: [{ label: '引用', text: '解释这段', mode: 'quote', source: 'last-assistant' }],
+    hidden: ['continue'],
+    presets: {},
+  }
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...base }) }
+  }
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+
+    assert.equal(findByClass(mounted.tree, 'dsh-quote-toggle'), null, '迁移后没有开关')
+    const left = findByClass(mounted.tree, 'dsh-section-left')
+    assert.equal(findAllWithClassToken(left, 'dsh-mode-insert')[0].props['aria-checked'], true, '旧 quote 点法 = 填入')
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-text-input').props.value, '{{引用AI回答}}\\n\\n解释这段')
+
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(posts[0].buttons, [
+      { label: '引用', text: '{{引用AI回答}}\\n\\n解释这段', mode: 'insert', source: 'static', style: 'ghost', side: 'left' },
+    ])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('旧 quote 配置在运行时也折算：点一下发出引用块 + 提示（不依赖宿主 insertQuote）', async () => {
+  const plugin = await loadPlugin()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, buttons: [{ label: '引用发', text: '解释这段', mode: 'send', quote: true, source: 'last-assistant' }] }),
+  })
+  const assistant = { event: { type: 'assistant/message', seq: 2, data: { message: { role: 'assistant', content: [{ type: 'text', text: '回答正文' }] } } } }
+  try {
+    const calls = []
+    const ctx = makeCtx({ calls, entries: [assistant] })
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    actionByLabel(mountDock(ctx).tree, '引用发').props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [
+      ['setDraft', '> 回答正文\n\n解释这段'],
+      ['submit'],
+    ], '旧配置读入即折算，和手写 {{引用AI回答}} 等价')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 
 test('档 2：上一条 AI 回答 / 会话标题 / 当前模型 / 本地时间都能当来源', async () => {
   const plugin = await loadPlugin()
@@ -2302,38 +2707,42 @@ test('模板占位符：取消不执行；`{{value}}` 不触发面板', async ()
   }
 })
 
-test('编辑器：次要设置收进抽屉，默认收起，点开才露出', async () => {
+test('编辑器：每行一行（没有 ⚙ 抽屉）；方式单字内联，{} 才展开变量菜单；标签可留空', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx()
+  const posts = []
   const prevFetch = globalThis.fetch
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a', mode: 'insert' }] }),
-  })
+  globalThis.fetch = async (_url, init) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(init.body)
+      posts.push(body)
+      return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, buttons: [{ label: '甲', text: 'a', mode: 'insert' }], hidden: ['continue'], presets: {} }) }
+  }
   try {
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
 
-    const metas = () => findAllByClass(mounted.tree, 'dsh-row-meta')
-    const toggles = () => findAllByClass(mounted.tree, 'dsh-row-toggle')
-    assert.ok(metas().length > 0, '每行都有设置行')
-    assert.ok(toggles().length > 0, '每行都有抽屉开关')
-    assert.ok(metas().every((row) => row.props.style.display === 'none'), '默认全部收起')
-    assert.ok(toggles().every((t) => t.children.join('') === '⚙'), '开关是设置图标')
+    assert.equal(findByClass(mounted.tree, 'dsh-row-toggle'), null, '没有 ⚙ 开关')
+    assert.equal(findByClass(mounted.tree, 'dsh-row-meta'), null, '没有抽屉')
+    assert.equal(findByClass(mounted.tree, 'dsh-editor-hint'), null, '顶部说明行已移到标题悬停')
+    const options = findAllWithClassToken(mounted.tree, 'dsh-mode-option')
+    assert.deepEqual(options.map((o) => o.children.join('')), ['发', '填'], '方式单字内联（引用是独立开关）')
+    assert.equal(findByClass(mounted.tree, 'dsh-var-menu'), null, '变量菜单默认不出')
+    findByClass(mounted.tree, 'dsh-add-var').props.onClick()
+    assert.ok(findByClass(mounted.tree, 'dsh-var-menu'), '点 {} 才出变量菜单')
 
-    // 点目标行的开关（按行内文字定位，默认按钮也在清单里）
-    const inputs = findAllByClass(mounted.tree, 'dsh-custom-text-input')
-    const target = inputs.findIndex((input) => input.props.value === 'a')
-    assert.ok(target >= 0)
-    toggles()[target].props.onClick()
-    assert.equal(metas()[target].props.style.display, 'flex', '点开后该行设置可见')
-    assert.equal(toggles()[target].props['aria-expanded'], 'true', '展开后 aria-expanded=true')
-
-    toggles()[target].props.onClick()
-    assert.equal(metas()[target].props.style.display, 'none', '再点收起')
+    // 标签留空：占位显示自动标签，保存时补上
+    findByClass(mounted.tree, 'dsh-custom-label-input').props.onChange({ target: { value: '' } })
+    findByClass(mounted.tree, 'dsh-custom-text-input').props.onChange({ target: { value: '解释这段代码：\\n{{选中}}' } })
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-label-input').props.placeholder, '解释这段代码：', '占位里显示会用的标签')
+    findByClass(mounted.tree, 'dsh-custom-save').props.onClick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(posts[0].buttons[0].label, '解释这段代码：')
+    assert.equal(posts[0].buttons[0].source, 'selection')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -2363,16 +2772,19 @@ test('可发现性：编辑器「＋ 变量」插入 {{名字}}，并提示这�
     const addVars = findAllByClass(mounted.tree, 'dsh-add-var')
     addVars[target].props.onClick()
     const chips = findAllByClass(mounted.tree, 'dsh-var-chip')
-    assert.ok(chips.length >= 4, `展开后应给出常用名，实际 ${chips.length}`)
-    const file = chips.find((chip) => chip.props['data-var'] === '文件')
-    assert.ok(file, '应当有「文件」这一项')
-    file.props.onClick()
+    assert.deepEqual(chips.map((chip) => chip.props['data-var']),
+      ['selection', 'last-user', 'last-assistant', 'draft', 'session-title', 'model', 'time',
+        'quote:selection', 'quote:last-user', 'quote:last-assistant', 'custom'], '自动读取七个 + 引用块三个 + 问我一个')
+    chips.find((chip) => chip.props['data-var'] === 'selection').props.onClick()
+    assert.equal(findAllByClass(mounted.tree, 'dsh-custom-text-input')[target].props.value, '总结这一轮{{选中}}', '内置变量插到文字末尾')
+    assert.equal(findAllByClass(mounted.tree, 'dsh-add-var')[target].props['data-asks'], '', '内置变量不算「会先问你」')
 
-    const textInput = findAllByClass(mounted.tree, 'dsh-custom-text-input')[target]
-    assert.equal(textInput.props.value, '总结这一轮{{文件}}', '插到文字末尾')
-    const hint = findByClass(mounted.tree, 'dsh-var-hint')
-    assert.ok(hint, '插了变量后行里要有提示')
-    assert.match(JSON.stringify(hint.children), /文件/, '提示里写出变量名')
+    findAllByClass(mounted.tree, 'dsh-add-var')[target].props.onClick()
+    findAllByClass(mounted.tree, 'dsh-var-chip').find((chip) => chip.props['data-var'] === 'custom').props.onClick()
+    assert.equal(findAllByClass(mounted.tree, 'dsh-custom-text-input')[target].props.value, '总结这一轮{{选中}}{{变量}}')
+    const hint = findAllByClass(mounted.tree, 'dsh-add-var')[target]
+    assert.equal(hint.children.join(''), '{1}', '{} 按钮显示「问我」变量个数')
+    assert.match(String(hint.props.title), /变量/, '悬停写出变量名')
   } finally {
     globalThis.fetch = prevFetch
   }

@@ -1434,10 +1434,16 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     const menu = findByClass(mounted.tree, 'dsh-custom-menu')
     menu.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80 }) } })
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
-    assert.ok(panel, '点开后出现面板')
-    // 视口读不到时按 1024×768 算：底边贴在按钮上边 6px，横向跟按钮中心对齐
-    assert.equal(panel.props.style.bottom, '174px', '面板底边在按钮上方 6px')
-    assert.equal(panel.props.style.left, '408px', '横向以按钮中心对齐')
+    assert.ok(panel, '点开后出现菜单')
+    // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，右边缘跟按钮右边缘对齐（1024 − 580）
+    assert.equal(panel.props.style.bottom, '174px', '整叠底边在按钮上方 6px')
+    assert.equal(panel.props.style.right, '444px', '右边缘对齐按钮右边缘')
+    assert.equal(panel.props.style.background, 'transparent', '外层不是面板：透明底、无边框')
+    // 选项就是动作条同款按钮，不是列表行
+    const items = findAllByClass(mounted.tree, 'dsh-menu-item')
+    assert.equal(items.length, 1)
+    assert.match(items[0].props.className, /dsh-custom-action/, '选项复用动作条按钮的类名')
+    assert.match(items[0].props.className, /dsh-style-secondary/, '外观跟着触发按钮（secondary）')
     // 点背景关闭
     findByClass(mounted.tree, 'dsh-menu-backdrop').props.onClick()
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点背景关闭菜单')

@@ -1403,9 +1403,9 @@ test('菜单按钮（档 6）：点开上拉选项，选一条才执行；旧选
     const menu = findByClass(mounted.tree, 'dsh-custom-menu')
     assert.ok(menu, '菜单按钮带 dsh-custom-menu 类')
     assert.equal(menu.props['aria-haspopup'], 'menu')
-    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [], '只点开、不执行')
-    menu.props.onClick()
-    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '点开后出现选项面板')
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [], '只展开、不执行')
+    menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } })
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '悬停后出现选项面板')
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')
     assert.equal(items.length, 2, '面板列出全部选项')
     assert.match(String(findByClass(mounted.tree, 'dsh-menu-meta').children.join('')), /写于 24 小时前/, '超过 24h 标「·旧」')
@@ -1436,9 +1436,9 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     const menu = findByClass(mounted.tree, 'dsh-custom-menu')
-    menu.props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } })
+    menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } })
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
-    assert.ok(panel, '点开后出现菜单')
+    assert.ok(panel, '悬停后出现菜单')
     // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，左边 = 按钮左边，宽高由 min/max 三重钉死
     assert.equal(panel.props.style.bottom, '174px', '整叠底边在按钮上方 6px')
     // 外框透明（不要浮层面板），左右边与触发按钮严格重合
@@ -1530,7 +1530,7 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
-    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick({
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
       currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) },
     })
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')
@@ -1543,29 +1543,46 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
   }
 })
 
-test('菜单按钮：再点一次触发按钮 = 收起（触屏没有 hover）', async () => {
+test('菜单按钮：有悬停时「点击 = 发继续」；触屏没有 hover 时点击才是开合', async () => {
   const plugin = await loadPlugin()
-  const ctx = makeCtx({ calls: [] })
+  const calls = []
+  const ctx = makeCtx({ calls })
   const prevFetch = globalThis.fetch
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
     json: async () => ({
       ok: true,
-      buttons: [{ label: '选项', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: 'A', text: 'a' }] }],
+      buttons: [{ label: '继续', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: 'A', text: 'a' }] }],
       hidden: ['continue'],
       presets: {},
     }),
   })
+  const ev = { currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } }
   try {
+    // ① 默认（无 matchMedia = 有悬停）：点击直接发「继续」，不展开
     plugin.apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    const mounted = mountDock(ctx)
-    const ev = { currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } }
+    let mounted = mountDock(ctx)
     findByClass(mounted.tree, 'dsh-custom-menu').props.onClick(ev)
-    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '第一次点击展开')
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '有悬停时点击不展开')
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '继续'], ['submit']], '点击发的是「继续」两个字')
+
+    // ② 触屏（matchMedia 报无 hover）：点击变成开合 —— 另起一个插件实例（dock 只注册一次）
+    const plugin2 = await loadPlugin()
+    // 注意：loadPlugin 会重建 globalThis.window，matchMedia 必须挂在重建之后
+    globalThis.window.matchMedia = () => ({ matches: false })
+    const calls2 = []
+    const ctx2 = makeCtx({ calls: calls2 })
+    plugin2.apply(ctx2)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    mounted = mountDock(ctx2)
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick(ev)
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '无悬停时第一次点击展开')
     findByClass(mounted.tree, 'dsh-custom-menu').props.onClick(ev)
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '第二次点击收起')
+    assert.deepEqual(calls2.filter((call) => call[0] !== 'for'), [], '开合过程中不发送')
+    delete globalThis.window.matchMedia
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -1628,7 +1645,7 @@ test('菜单按钮：贴近屏幕顶端时改成向下展开（否则会把叠�
     await new Promise((resolve) => setTimeout(resolve, 0))
     const mounted = mountDock(ctx)
     // 按钮在顶部：上方只有 30px，放不下两三项 → 翻到下方
-    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick({
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
       currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 30, width: 80, height: 28 }) },
     })
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
@@ -3107,3 +3124,4 @@ test('可发现性：带变量的按钮，悬浮提示里标出变量个数', as
     globalThis.fetch = prevFetch
   }
 })
+

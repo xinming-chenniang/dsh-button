@@ -1535,7 +1535,7 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
     })
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')
     assert.equal(items.length, 1, '不显示别的会话的方案')
-    assert.equal(items[0].props['aria-label'], '继续', '只剩一行「继续」')
+    assert.equal(items[0].props['aria-label'], '写方案', '标签不叫「继续」，避免和触发按钮混淆')
     items[0].props.onClick()
     const sent = calls.filter((call) => call[0] === 'setDraft').map((call) => String(call[1]))
     assert.equal(sent.length, 1, '点它发一条消息')

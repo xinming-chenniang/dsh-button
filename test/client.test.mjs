@@ -1458,9 +1458,12 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     assert.doesNotMatch(String(items[0].props.style.background), /transparent/, '底色不混 transparent')
     assert.equal(items[0].props.style.marginRight, 0, '竖排里去掉动作条按钮自带的右边距')
     assert.equal(items[0].props.style.boxSizing, 'border-box', 'border-box：padding/边框不吃进宽度之外')
-    // 点背景关闭
-    findByClass(mounted.tree, 'dsh-menu-backdrop').props.onClick()
-    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点背景关闭菜单')
+    // 不再有全屏背板（它会盖住触发按钮，导致 hover 反复开合/跳动）
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-backdrop'), null, '没有全屏背板')
+    // 移出叠 → 宽限期后收起
+    findByClass(mounted.tree, 'dsh-menu-panel').props.onMouseLeave()
+    await new Promise((resolve) => setTimeout(resolve, 240))
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '移出叠后收起')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -1500,6 +1503,34 @@ test('窗口重新聚焦时重拉配置：agent 中途改的按钮/菜单会自�
     globalThis.fetch = prevFetch
     delete globalThis.window.addEventListener
     delete globalThis.window.removeEventListener
+  }
+})
+
+test('菜单按钮：再点一次触发按钮 = 收起（触屏没有 hover）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '选项', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: 'A', text: 'a' }] }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const ev = { currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } }
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick(ev)
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '第一次点击展开')
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick(ev)
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '第二次点击收起')
+  } finally {
+    globalThis.fetch = prevFetch
   }
 })
 

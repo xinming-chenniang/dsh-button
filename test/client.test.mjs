@@ -1503,6 +1503,44 @@ test('窗口重新聚焦时重拉配置：agent 中途改的按钮/菜单会自�
   }
 })
 
+test('菜单按钮：鼠标悬停即展开，移开后延迟收起（移进叠里则取消）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '选项', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: 'A', text: 'a' }] }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const menu = findByClass(mounted.tree, 'dsh-custom-menu')
+    assert.equal(typeof menu.props.onMouseEnter, 'function', '菜单按钮有 onMouseEnter')
+    const rect = { left: 500, top: 600, width: 80, height: 28 }
+    // 悬停：直接展开，不需要点击
+    menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => rect } })
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '悬停就出叠')
+    // 移出按钮后 180ms 内移进叠：不应收起
+    menu.props.onMouseLeave()
+    findByClass(mounted.tree, 'dsh-menu-panel').props.onMouseEnter()
+    await new Promise((resolve) => setTimeout(resolve, 240))
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '移进叠里不会被收起')
+    // 移出叠：宽限期过后收起
+    findByClass(mounted.tree, 'dsh-menu-panel').props.onMouseLeave()
+    await new Promise((resolve) => setTimeout(resolve, 240))
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '移开后自动收起')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('菜单按钮：贴近屏幕顶端时改成向下展开（否则会把叠压得很矮）', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx({ calls: [] })

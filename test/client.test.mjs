@@ -49,6 +49,10 @@ const fakeReactDOM = {
 }
 
 /** 载入客户端半部，拿回它交给宿主的插件对象。 */
+/** 菜单的悬停展开有 450ms 判定时间：测试里统一等这么久再看结果。 */
+async function waitMenuOpen() {
+  await new Promise((resolve) => setTimeout(resolve, 520))
+}
 let loadSeq = 0
 async function loadPlugin() {
   const loaded = []
@@ -1405,6 +1409,7 @@ test('菜单按钮（档 6）：点开上拉选项，选一条才执行；旧选
     assert.equal(menu.props['aria-haspopup'], 'menu')
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [], '只展开、不执行')
     menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } })
+    await waitMenuOpen()
     assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '悬停后出现选项面板')
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')
     assert.equal(items.length, 2, '面板列出全部选项')
@@ -1437,6 +1442,7 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     const mounted = mountDock(ctx)
     const menu = findByClass(mounted.tree, 'dsh-custom-menu')
     menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) } })
+    await waitMenuOpen()
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
     assert.ok(panel, '悬停后出现菜单')
     // 视口读不到时按 1024×768 算：底边贴按钮上边 6px，左边 = 按钮左边，宽高由 min/max 三重钉死
@@ -1533,6 +1539,7 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
     findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
       currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) },
     })
+    await waitMenuOpen()
     const items = findAllByClass(mounted.tree, 'dsh-menu-item')
     assert.equal(items.length, 1, '不显示别的会话的方案')
     assert.equal(items[0].props['aria-label'], '写方案', '标签不叫「继续」，避免和触发按钮混淆')
@@ -1542,6 +1549,44 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
     assert.match(sent[0], /^继续/, '发出去的话以「继续」开头')
     assert.match(sent[0], /set_options/, '同时要求当前会话把方案写进这个按钮')
     assert.equal(calls.filter((call) => call[0] === 'submit').length, 1, '只提交一次')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('菜单按钮：悬停要停够 450ms 才展开 —— 正常点一下「继续」不会先把选项弹出来', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  const ctx = makeCtx({ calls })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{ label: '继续', text: '', mode: 'send', kind: 'menu', side: 'right', items: [{ label: '发版', text: '发吧' }] }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    const menu = findByClass(mounted.tree, 'dsh-custom-menu')
+    const rect = { left: 500, top: 600, width: 80, height: 28 }
+    // ① 移上去马上点：不应展开，直接发「继续」
+    menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => rect } })
+    menu.props.onClick({ currentTarget: { getBoundingClientRect: () => rect } })
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点击时不展开')
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '继续'], ['submit']], '点击发的是「继续」')
+    // ② 点了之后那颗「延迟展开」必须被取消：等过判定时间也不该再弹出来
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点击会取消待展开')
+    // ③ 纯悬停停够时间：正常展开
+    menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => rect } })
+    await waitMenuOpen()
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '停够 450ms 才展开')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -1602,6 +1647,7 @@ test('菜单按钮：长标签把叠撑宽（左边缘仍对齐按钮），不�
     findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
       currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 60, height: 28 }) },
     })
+    await waitMenuOpen()
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
     assert.equal(panel.props.style.left, '500px', '左边缘仍与按钮对齐')
     // 4 字 × 12 + 28 = 76 > 按钮宽 60 → 撑到 76
@@ -1682,6 +1728,7 @@ test('菜单按钮：鼠标悬停即展开，移开后延迟收起（移进叠�
     const rect = { left: 500, top: 600, width: 80, height: 28 }
     // 悬停：直接展开，不需要点击
     menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => rect } })
+    await waitMenuOpen()
     assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '悬停就出叠')
     // 移出按钮后 180ms 内移进叠：不应收起
     menu.props.onMouseLeave()
@@ -1719,6 +1766,7 @@ test('菜单按钮：贴近屏幕顶端时改成向下展开（否则会把叠�
     findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
       currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 30, width: 80, height: 28 }) },
     })
+    await waitMenuOpen()
     const panel = findByClass(mounted.tree, 'dsh-menu-panel')
     assert.equal(panel.props.style.top, '64px', '翻到按钮下方 6px（30 + 28 + 6）')
     assert.equal(panel.props.style.bottom, undefined, '不再用 bottom 定位')
@@ -3195,4 +3243,7 @@ test('可发现性：带变量的按钮，悬浮提示里标出变量个数', as
     globalThis.fetch = prevFetch
   }
 })
+
+
+
 

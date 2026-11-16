@@ -1537,7 +1537,11 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
     assert.equal(items.length, 1, '不显示别的会话的方案')
     assert.equal(items[0].props['aria-label'], '继续', '只剩一行「继续」')
     items[0].props.onClick()
-    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '继续'], ['submit']], '点它发的就是「继续」')
+    const sent = calls.filter((call) => call[0] === 'setDraft').map((call) => String(call[1]))
+    assert.equal(sent.length, 1, '点它发一条消息')
+    assert.match(sent[0], /^继续/, '发出去的话以「继续」开头')
+    assert.match(sent[0], /set_options/, '同时要求当前会话把方案写进这个按钮')
+    assert.equal(calls.filter((call) => call[0] === 'submit').length, 1, '只提交一次')
   } finally {
     globalThis.fetch = prevFetch
   }

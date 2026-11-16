@@ -1506,6 +1506,43 @@ test('窗口重新聚焦时重拉配置：agent 中途改的按钮/菜单会自�
   }
 })
 
+test('菜单按钮：别的会话写的方案，只显示一行「继续」，点它发的是「继续」', async () => {
+  const plugin = await loadPlugin()
+  const calls = []
+  // 当前会话是 session-current；配置里的菜单是 session-other 写的
+  const ctx = makeCtx({ calls, byId: { 'session-current': { retainedBy: { mainView: 1 } } } })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{
+        label: '下一步', text: '', mode: 'send', kind: 'menu', side: 'right',
+        session: 'session-other',
+        items: [{ label: '发版', text: '发吧' }, { label: '补键盘', text: '补吧' }],
+      }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onClick({
+      currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) },
+    })
+    const items = findAllByClass(mounted.tree, 'dsh-menu-item')
+    assert.equal(items.length, 1, '不显示别的会话的方案')
+    assert.equal(items[0].props['aria-label'], '继续', '只剩一行「继续」')
+    items[0].props.onClick()
+    assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '继续'], ['submit']], '点它发的就是「继续」')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('菜单按钮：再点一次触发按钮 = 收起（触屏没有 hover）', async () => {
   const plugin = await loadPlugin()
   const ctx = makeCtx({ calls: [] })

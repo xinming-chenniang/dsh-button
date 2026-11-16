@@ -436,6 +436,30 @@ test('菜单按钮：超 8 项 / 选项缺文字 / 选项标签超长 都明确�
   assert.match(longLabel.message, /标签超过 12 字/)
 })
 
+test('set_options：默认记录当前会话 id（DSH_SESSION_ID），其它会话打开时据此换行「继续」', async () => {
+  await withConfigFile(async ({ file }) => {
+    saveConfig([
+      { label: '下一步', text: '', mode: 'send', kind: 'menu', items: [{ label: '旧', text: '旧', mode: 'send' }], at: '2026-11-01T00:00:00.000Z', source: 'static', style: 'secondary', side: 'right' },
+    ], [], DEFAULT_PRESETS, file)
+    const prev = process.env.DSH_SESSION_ID
+    process.env.DSH_SESSION_ID = 'session-aaa'
+    try {
+      const res = runButtonsAction({ action: 'set_options', label: '下一步', items: [{ label: '发版', text: '发吧' }] }, { file })
+      assert.equal(res.ok, true)
+      assert.equal(res.updated.session, 'session-aaa', '默认写成当前会话')
+    } finally {
+      if (prev === undefined) delete process.env.DSH_SESSION_ID
+      else process.env.DSH_SESSION_ID = prev
+    }
+    // 显式传 session 优先
+    const explicit = runButtonsAction({ action: 'set_options', label: '下一步', items: [{ label: 'A', text: 'a' }], session: 'session-bbb' }, { file })
+    assert.equal(explicit.updated.session, 'session-bbb')
+    // 摘掉菜单时要连 session 一起清掉，不能残留
+    const cleared = runButtonsAction({ action: 'set_options', label: '下一步', items: [] }, { file })
+    assert.equal(cleared.ok, false, '没有主文字时摘菜单会被校验拒绝')
+  })
+})
+
 test('set_options：只改目标那条的选项，其它按钮逐字不变', async () => {
   await withConfigFile(async ({ file }) => {
     const base = [

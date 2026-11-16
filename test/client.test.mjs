@@ -1578,6 +1578,42 @@ test('首次安装：默认「继续」是菜单，且不会再多补一个预�
   }
 })
 
+test('菜单按钮：长标签把叠撑宽（左边缘仍对齐按钮），不再截成「复判…」', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{
+        label: '继续', text: '', mode: 'send', kind: 'menu', side: 'right',
+        items: [{ label: '复判漏报', text: 'a' }, { label: '真实样本', text: 'b', mode: 'insert' }],
+      }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
+      currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 60, height: 28 }) },
+    })
+    const panel = findByClass(mounted.tree, 'dsh-menu-panel')
+    assert.equal(panel.props.style.left, '500px', '左边缘仍与按钮对齐')
+    // 4 字 × 12 + 28 = 76 > 按钮宽 60 → 撑到 76
+    assert.equal(panel.props.style.width, '76px', '按最长标签撑宽')
+    assert.equal(panel.props.style.minWidth, '76px')
+    // 不再画「填入」角标（它会把标签挤成 1~2 字）
+    assert.equal(findAllByClass(mounted.tree, 'dsh-menu-item-mode').length, 0, '没有模式角标')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('菜单按钮：有悬停时「点击 = 发继续」；触屏没有 hover 时点击才是开合', async () => {
   const plugin = await loadPlugin()
   const calls = []

@@ -49,9 +49,9 @@ const fakeReactDOM = {
 }
 
 /** 载入客户端半部，拿回它交给宿主的插件对象。 */
-/** 菜单的悬停展开有 450ms 判定时间：测试里统一等这么久再看结果。 */
+/** 菜单的悬停展开有 220ms 判定时间：测试里统一等这么久再看结果。 */
 async function waitMenuOpen() {
-  await new Promise((resolve) => setTimeout(resolve, 520))
+  await new Promise((resolve) => setTimeout(resolve, 300))
 }
 let loadSeq = 0
 async function loadPlugin() {
@@ -1554,7 +1554,7 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
   }
 })
 
-test('菜单按钮：悬停要停够 450ms 才展开 —— 正常点一下「继续」不会先把选项弹出来', async () => {
+test('菜单按钮：悬停要停够判定时间才展开 —— 正常点一下「继续」不会先把选项弹出来', async () => {
   const plugin = await loadPlugin()
   const calls = []
   const ctx = makeCtx({ calls })
@@ -1581,12 +1581,12 @@ test('菜单按钮：悬停要停够 450ms 才展开 —— 正常点一下「�
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点击时不展开')
     assert.deepEqual(calls.filter((call) => call[0] !== 'for'), [['setDraft', '继续'], ['submit']], '点击发的是「继续」')
     // ② 点了之后那颗「延迟展开」必须被取消：等过判定时间也不该再弹出来
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await new Promise((resolve) => setTimeout(resolve, 400))
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点击会取消待展开')
     // ③ 纯悬停停够时间：正常展开
     menu.props.onMouseEnter({ currentTarget: { getBoundingClientRect: () => rect } })
     await waitMenuOpen()
-    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '停够 450ms 才展开')
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-panel'), '停够判定时间才展开')
   } finally {
     globalThis.fetch = prevFetch
   }
@@ -3243,6 +3243,7 @@ test('可发现性：带变量的按钮，悬浮提示里标出变量个数', as
     globalThis.fetch = prevFetch
   }
 })
+
 
 
 

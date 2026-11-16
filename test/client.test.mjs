@@ -1543,6 +1543,37 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
   }
 })
 
+test('首次安装：默认「继续」是菜单，且不会再多补一个预设「继续」', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  // 模拟宿主返回默认配置：hidden 里没有 continue（老行为下客户端会补一条预设 → 两个「继续」）
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [
+        { label: '重发', text: '', mode: 'send', source: 'last-user' },
+        { label: '继续', text: '', mode: 'send', kind: 'menu', items: [{ label: '写方案', text: '写吧' }] },
+      ],
+      hidden: [],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    assert.equal(findAllByClass(mounted.tree, 'dsh-custom-menu').length, 1, '只有一个菜单按钮')
+    const contButtons = findAllWithClassToken(mounted.tree, 'dsh-custom-action')
+      .filter((node) => String(node.props['aria-label'] ?? '').startsWith('继续'))
+    assert.equal(contButtons.length, 1, '「继续」只出现一次（不重复补预设）')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('菜单按钮：有悬停时「点击 = 发继续」；触屏没有 hover 时点击才是开合', async () => {
   const plugin = await loadPlugin()
   const calls = []

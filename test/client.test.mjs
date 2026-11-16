@@ -31,6 +31,10 @@ const fakeReact = {
     return [typeof init === 'function' ? init() : init, () => {}]
   },
   Fragment: Symbol('Fragment'),
+  // 组件里只用到「挂载时注册一次监听」这一种 effect：测试里立即执行，cleanup 先忽略即可。
+  useEffect: (fn) => {
+    if (typeof fn === 'function') fn()
+  },
   Component: class Component {
     constructor(props) { this.props = props }
   },
@@ -1459,6 +1463,43 @@ test('菜单按钮（档 6）：面板贴着被点的按钮往上弹（上拉菜
     assert.equal(findByClass(mounted.tree, 'dsh-menu-panel'), null, '点背景关闭菜单')
   } finally {
     globalThis.fetch = prevFetch
+  }
+})
+
+test('窗口重新聚焦时重拉配置：agent 中途改的按钮/菜单会自己出现在按钮行上', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [] })
+  const prevFetch = globalThis.fetch
+  const menuPayload = (labels) => ({
+    ok: true,
+    buttons: [{
+      label: '选项', text: '', mode: 'send', kind: 'menu', side: 'right',
+      items: labels.map((label) => ({ label, text: label.toLowerCase() })),
+    }],
+    hidden: ['continue'],
+    presets: {},
+  })
+  let payload = menuPayload(['A'])
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => payload })
+  // 只给这一个用例装监听器表：改的是 loadPlugin 建好的那个 window 对象，不动 ModuleLoader。
+  const focusHandlers = []
+  globalThis.window.addEventListener = (type, fn) => { if (type === 'focus') focusHandlers.push(fn) }
+  globalThis.window.removeEventListener = () => {}
+  try {
+    plugin.apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const mounted = mountDock(ctx)
+    assert.match(String(findByClass(mounted.tree, 'dsh-custom-menu').props.title), /1 个选项/, '挂载时是 1 项')
+    // 模拟 agent 中途 set_options：配置变成 2 项，然后用户切回窗口
+    payload = menuPayload(['A', 'B'])
+    assert.ok(focusHandlers.length > 0, '挂载时注册了 focus 监听')
+    focusHandlers.forEach((fn) => fn())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.match(String(findByClass(mounted.tree, 'dsh-custom-menu').props.title), /2 个选项/, '回到前台后按钮行自己更新')
+  } finally {
+    globalThis.fetch = prevFetch
+    delete globalThis.window.addEventListener
+    delete globalThis.window.removeEventListener
   }
 })
 

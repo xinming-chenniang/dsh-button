@@ -543,7 +543,7 @@ test('默认按钮：首次安装的「继续」是菜单（点击发继续，�
   assert.ok(cont, '默认里有「继续」')
   assert.equal(cont.text, '', '菜单本身不带文字')
   assert.ok(Array.isArray(cont.items) && cont.items.length >= 1, '带选项')
-  assert.deepEqual(cont.items.map((i) => i.label), ['写方案', '这按钮怎么用'])
+  assert.deepEqual(cont.items.map((i) => i.label), ['生成选项', '这按钮怎么用'])
   assert.equal('at' in cont, false, '默认项不带 at，不会显示「·旧」')
   // 存进去再读回来仍是菜单（normalizeButton 会补 kind）
   const round = validateConfig(DEFAULT_BUTTONS)

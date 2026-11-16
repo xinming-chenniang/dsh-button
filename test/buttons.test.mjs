@@ -623,6 +623,27 @@ test('工具：list 读默认值；add / remove / save 与界面同一条路径'
   })
 })
 
+test('工具：set_options 没传 session 时自动补当前会话 id', async () => {
+  await withConfigFile(async ({ file }) => {
+    saveConfig([
+      { label: '继续', text: '', mode: 'send', kind: 'menu', items: [{ label: '旧', text: '旧', mode: 'send' }], at: '2026-11-01T00:00:00.000Z', source: 'static', style: 'secondary', side: 'right' },
+    ], [], DEFAULT_PRESETS, file)
+    const registered = []
+    const ctx = {
+      get: (name) => {
+        if (name === 'tools') return { register: (definition) => { registered.push(definition); return () => {} } }
+        if (name === 'sessions') return { list: { getSnapshot: () => ({ current: 'session-from-host', byId: {} }) } }
+        return undefined
+      },
+      effect: (fn) => fn(),
+    }
+    applyTools(ctx)
+    const value = await registered[0].execute({ action: 'set_options', label: '继续', items: [{ label: 'A', text: 'a' }] })
+    assert.equal(value.ok, true)
+    assert.equal(value.updated.session, 'session-from-host', '宿主会话 id 自动填进去')
+  })
+})
+
 test('工具：apply 注册 dsh_button，execute 直通 runButtonsAction', async () => {
   await withConfigFile(async () => {
     const registered = []

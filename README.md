@@ -357,7 +357,7 @@ npm test
 
 ## 变更
 
-看 [CHANGELOG.md](CHANGELOG.md)。已发布的是 **1.4.0**（npm `latest` 与 GitHub Release）；`main` 上的 **1.4.1** 修的是宿主路由的访问检查，待发布。
+看 [CHANGELOG.md](CHANGELOG.md)。npm `latest` 与 GitHub Release 都是 **1.4.1**（宿主路由的访问检查修复）。
 
 问题反馈：[GitHub Issues](https://github.com/xinming-chenniang/dsh-button/issues)。MIT License。
 

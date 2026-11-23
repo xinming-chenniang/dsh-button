@@ -19,6 +19,9 @@
   `node --test --test-name-pattern "DSH 访问检查" test/buttons.test.mjs` 报 `actual: 200, expected: 403`（fail 1）；改回 → pass 1。
 - **兼容**：`connection` 在 `engines.dsh >= 0.2.0-rc.2` 全线上都有（本机 `0.2.2-rc.5` 的 asar 里 `requestRejection` 存在），不抬最低版本。
 - **宿主半部改动 → 重启 DSH 生效**；改完还没在真机上点过（重启会打断当前会话，留给下次重启后验一次 GET）。
+- **已发 2026-11-24**：npm `latest` = **1.4.1**（`npm stage publish` → stage `e9647207-…` → approve；两次 E409「automated review 未完成」后第三次通过），
+  tag `v1.4.1` + GitHub Release 资产 `dsh-button-1.4.1.tgz`（302,948 B，与 `npm pack` 同一份）。
+  市场条目 PR **#18273 已提**（删掉 en/zh 里那句披露，`tarball` 改钉 v1.4.1）。
 
 
 ## 1.4.0 — 2026-11-23：菜单按钮（档 6）+ 按会话存储

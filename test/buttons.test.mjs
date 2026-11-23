@@ -18,16 +18,24 @@ import { configPath, loadConfig, saveConfig, validateConfig, validateHidden, val
 const ROUTE = '/api/dsh-button/buttons'
 
 /** 临时目录 + 指向其中 buttons.json 的环境变量，finally 里恢复。 */
-function withConfigFile(fn) {
+async function withConfigFile(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-button-cfg-'))
   const file = join(dir, 'buttons.json')
   const prev = process.env.DSH_BUTTON_CONFIG
+  const prevSession = process.env.DSH_SESSION_ID
   process.env.DSH_BUTTON_CONFIG = file
-  return Promise.resolve(fn({ dir, file })).finally(() => {
+  // 不继承宿主进程的 DSH_SESSION_ID：否则「没传 session」的用例会按真实会话盖章，
+  // 测试结果随跑它的环境变（2026-11-23 改按会话存选项后暴露）。
+  delete process.env.DSH_SESSION_ID
+  try {
+    return await fn({ dir, file })
+  } finally {
     if (prev === undefined) delete process.env.DSH_BUTTON_CONFIG
     else process.env.DSH_BUTTON_CONFIG = prev
+    if (prevSession === undefined) delete process.env.DSH_SESSION_ID
+    else process.env.DSH_SESSION_ID = prevSession
     rmSync(dir, { recursive: true, force: true })
-  })
+  }
 }
 
 function fakeReq({ method = 'GET', body = undefined, addr = '127.0.0.1', host = '127.0.0.1:53579', origin } = {}) {
@@ -436,27 +444,31 @@ test('菜单按钮：超 8 项 / 选项缺文字 / 选项标签超长 都明确�
   assert.match(longLabel.message, /标签超过 12 字/)
 })
 
-test('set_options：默认记录当前会话 id（DSH_SESSION_ID），其它会话打开时据此换行「继续」', async () => {
+test('set_options：选项按会话各存一节（DSH_SESSION_ID 补调用方会话），互不覆盖', async () => {
   await withConfigFile(async ({ file }) => {
     saveConfig([
-      { label: '下一步', text: '', mode: 'send', kind: 'menu', items: [{ label: '旧', text: '旧', mode: 'send' }], at: '2026-11-01T00:00:00.000Z', source: 'static', style: 'secondary', side: 'right' },
+      { label: '下一步', text: '继续', mode: 'send', source: 'static', style: 'secondary', side: 'right' },
     ], [], DEFAULT_PRESETS, file)
-    const prev = process.env.DSH_SESSION_ID
     process.env.DSH_SESSION_ID = 'session-aaa'
-    try {
-      const res = runButtonsAction({ action: 'set_options', label: '下一步', items: [{ label: '发版', text: '发吧' }] }, { file })
-      assert.equal(res.ok, true)
-      assert.equal(res.updated.session, 'session-aaa', '默认写成当前会话')
-    } finally {
-      if (prev === undefined) delete process.env.DSH_SESSION_ID
-      else process.env.DSH_SESSION_ID = prev
-    }
-    // 显式传 session 优先
+    const first = runButtonsAction({ action: 'set_options', label: '下一步', items: [{ label: '发版', text: '发吧' }] }, { file })
+    assert.equal(first.ok, true)
+    assert.equal(first.session, 'session-aaa', '默认写成当前会话')
+    assert.deepEqual(Object.keys(first.updated.sessions), ['session-aaa'])
+    // 显式传 session 优先：换一个会话来写，前一个那份不能被盖掉
     const explicit = runButtonsAction({ action: 'set_options', label: '下一步', items: [{ label: 'A', text: 'a' }], session: 'session-bbb' }, { file })
-    assert.equal(explicit.updated.session, 'session-bbb')
-    // 摘掉菜单时要连 session 一起清掉，不能残留
+    assert.equal(explicit.session, 'session-bbb')
+    assert.deepEqual(Object.keys(explicit.updated.sessions).sort(), ['session-aaa', 'session-bbb'])
+    // 摘菜单只摘当前会话那一节，别的会话那份留着
     const cleared = runButtonsAction({ action: 'set_options', label: '下一步', items: [] }, { file })
-    assert.equal(cleared.ok, false, '没有主文字时摘菜单会被校验拒绝')
+    assert.equal(cleared.ok, true)
+    assert.deepEqual(Object.keys(cleared.updated.sessions), ['session-bbb'])
+    // 没有会话 id 的调用（老调用方 / 直接调）：写共享项，所有会话都看得到，不碰会话那节
+    delete process.env.DSH_SESSION_ID
+    const shared = runButtonsAction({ action: 'set_options', label: '下一步', items: [{ label: '共享', text: 'x' }] }, { file })
+    assert.equal(shared.ok, true)
+    assert.equal(shared.session, '')
+    assert.deepEqual(shared.updated.items.map((item) => item.label), ['共享'])
+    assert.deepEqual(Object.keys(shared.updated.sessions), ['session-bbb'], '写共享项不碰会话那节')
   })
 })
 
@@ -655,7 +667,8 @@ test('工具：set_options 没传 session 时自动补当前会话 id', async ()
     applyTools(ctx)
     const value = await registered[0].execute({ action: 'set_options', label: '继续', items: [{ label: 'A', text: 'a' }] })
     assert.equal(value.ok, true)
-    assert.equal(value.updated.session, 'session-from-host', '宿主会话 id 自动填进去')
+    assert.equal(value.session, 'session-from-host', '宿主会话 id 自动填进去')
+    assert.deepEqual(Object.keys(value.updated.sessions), ['session-from-host'])
   })
 })
 

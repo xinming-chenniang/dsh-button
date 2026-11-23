@@ -31,7 +31,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/client.test.mjs test/buttons.test.mjs"
+    "test": "node --test test/client.test.mjs test/buttons.test.mjs test/tools.test.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc"

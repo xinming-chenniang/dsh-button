@@ -487,6 +487,86 @@ test('配置为空时仍保留「继续」和「＋」入口', async () => {
   }
 })
 
+test('配置活同步：refreshCustomButtons 拉到新配置就广播（不用刷新页面）', async () => {
+  const plugin = await loadPlugin()
+  const { refreshCustomButtons, subscribeCustomButtons } = plugin.__internals
+  const seen = []
+  const off = subscribeCustomButtons(makeCtx(), (buttons) => seen.push(buttons.map((item) => item.label)))
+  const prevFetch = globalThis.fetch
+  let payload = { ok: true, buttons: [{ label: '继续', text: '继续', items: [{ label: '方案A', text: 'A' }] }] }
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => payload })
+  try {
+    assert.equal(await refreshCustomButtons(), true)
+    assert.deepEqual(seen, [['继续']], 'agent 写入的菜单按钮应当立刻广播给各格')
+    // 内容没变：不重复推状态（避免输入框上方无谓重渲染）
+    assert.equal(await refreshCustomButtons(), true)
+    assert.equal(seen.length, 1, '配置没变不重复广播')
+    // agent 用 set_options 换了一批选项
+    payload = { ok: true, buttons: [{ label: '继续', text: '继续', items: [{ label: '方案B', text: 'B' }] }] }
+    assert.equal(await refreshCustomButtons(), true)
+    assert.equal(seen.length, 2, '配置变了要广播')
+  } finally {
+    globalThis.fetch = prevFetch
+    off()
+  }
+})
+
+test('配置活同步：轮询拉取失败沿用当前配置，不清空按钮', async () => {
+  const plugin = await loadPlugin()
+  const { refreshCustomButtons, subscribeCustomButtons } = plugin.__internals
+  const seen = []
+  const off = subscribeCustomButtons(makeCtx(), (buttons) => seen.push(buttons))
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({ ok: false, message: 'boom' }) })
+  try {
+    assert.equal(await refreshCustomButtons(), false)
+    assert.equal(seen.length, 0, '失败时不得广播空配置')
+  } finally {
+    globalThis.fetch = prevFetch
+    off()
+  }
+})
+
+test('配置活同步：本格保存后广播，另一侧那格不必等下一次轮询', async () => {
+  const plugin = await loadPlugin()
+  const { saveCustomButtons, subscribeCustomButtons } = plugin.__internals
+  const seen = []
+  const off = subscribeCustomButtons(makeCtx(), (buttons) => seen.push(buttons.map((item) => item.label)))
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async (_url, init) => {
+    const body = init?.method === 'POST' ? JSON.parse(init.body) : { buttons: [] }
+    return { ok: true, status: 200, json: async () => ({ ok: true, ...body }) }
+  }
+  try {
+    await saveCustomButtons([{ label: '甲', text: 'a' }])
+    assert.deepEqual(seen.at(-1), ['甲'], '保存后立刻广播')
+  } finally {
+    globalThis.fetch = prevFetch
+    off()
+  }
+})
+
+test('配置活同步：agent 写到宿主的新按钮不用刷新页面就出现在动作行上', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  const current = { buttons: [{ label: '继续', text: '继续' }] }
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, ...current }) })
+  try {
+    plugin.apply(ctx)
+    await tick()
+    const mounted = mountDock(ctx)
+    assert.ok(actionByLabel(mounted.tree, '继续'), '首帧读到旧配置')
+    assert.equal(actionByLabel(mounted.tree, '写方案'), null)
+    // agent 用 dsh_button 写了一条新按钮（宿主 JSON 变了）
+    current.buttons = [{ label: '继续', text: '继续' }, { label: '写方案', text: '写方案' }]
+    assert.equal(await plugin.__internals.refreshCustomButtons(), true)
+    assert.ok(actionByLabel(mounted.tree, '写方案'), '新按钮应当自动出现，不需要刷新页面')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('moveRow：搬一条；越界/原地返回原数组，且不改入参', async () => {
   const plugin = await loadPlugin()
   const { moveRow } = plugin.__internals
@@ -1549,6 +1629,153 @@ test('菜单按钮：别的会话写的方案，只显示一行「继续」，�
     assert.match(sent[0], /^继续/, '发出去的话以「继续」开头')
     assert.match(sent[0], /set_options/, '同时要求当前会话把方案写进这个按钮')
     assert.equal(calls.filter((call) => call[0] === 'submit').length, 1, '只提交一次')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('菜单按钮：设置里关掉「生成本轮选项」后，别的会话写的那一格按钮整个隐藏', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ calls: [], byId: { 'session-current': { retainedBy: { mainView: 1 } } } })
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{
+        label: '下一步', text: '', mode: 'send', kind: 'menu', side: 'right',
+        session: 'session-other',
+        items: [{ label: '发版', text: '发吧' }, { label: '补键盘', text: '补吧' }],
+      }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await tick()
+    const mounted = mountDock(ctx)
+    assert.ok(findByClass(mounted.tree, 'dsh-custom-menu'), '设置开着时还能看到这一格（只给兜底行）')
+    // 设置里应当有这个开关，默认打开
+    findByClass(mounted.tree, 'dsh-custom-manage').props.onClick()
+    findByClass(mounted.tree, 'dsh-display-toggle').props.onClick()
+    const toggle = findByClass(mounted.tree, 'dsh-foreign-menu-toggle')
+    assert.ok(toggle, '设置面板里应当有「生成本轮选项」开关')
+    assert.equal(toggle.props.checked, true, '默认开启（保持会话隔离）')
+    toggle.props.onChange({ target: { checked: false } })
+    assert.equal(findByClass(mounted.tree, 'dsh-custom-menu'), null, '关掉后这一格按钮整个隐藏')
+    assert.ok(findByClass(mounted.tree, 'dsh-custom-manage'), '「＋」设置入口不受影响')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('菜单选项按会话各存一节：当前会话只看自己那份（别的会话写的不覆盖它）', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx({ byId: { 'session-current': { retainedBy: { mainView: 1 } } } })
+  const prevFetch = globalThis.fetch
+  const now = new Date().toISOString()
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{
+        label: '继续', text: '', mode: 'send', kind: 'menu', side: 'right',
+        sessions: {
+          'session-current': { items: [{ label: '我的甲', text: 'a' }, { label: '我的乙', text: 'b' }], at: now },
+          'session-other': { items: [{ label: '别人的', text: 'x' }], at: now },
+        },
+      }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  try {
+    plugin.apply(ctx)
+    await tick()
+    const mounted = mountDock(ctx)
+    findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
+      currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) },
+    })
+    await waitMenuOpen()
+    const items = findAllByClass(mounted.tree, 'dsh-menu-item')
+    assert.deepEqual(items.map((node) => node.props['aria-label']), ['我的甲', '我的乙'], '只显示本会话那一节')
+    assert.equal(items.length, 2, '不是兜底的那一行「生成本轮选项」')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('菜单：共享项（没有 sessions）谁打开都看得到；自己那一节优先于共享项', async () => {
+  // 纯函数层，不挂组件：旧配置（items 共享）与新的按会话存储要能同时解释。
+  const plugin = await loadPlugin()
+  const { menuOptionsOf: optionsOf, isMenuButton: isMenu } = plugin.__internals
+  const shared = { label: '继续', items: [{ label: '共享', text: 's' }] }
+  assert.equal(isMenu(shared), true)
+  assert.deepEqual(optionsOf(shared, 'session-x').items.map((item) => item.label), ['共享'])
+  const both = {
+    label: '继续',
+    items: [{ label: '共享', text: 's' }],
+    sessions: { 'session-x': { items: [{ label: '自己的', text: 'o' }], at: '2026-11-23T00:00:00.000Z' } },
+  }
+  assert.deepEqual(optionsOf(both, 'session-x').items.map((item) => item.label), ['自己的'], '自己有就用自己的')
+  assert.deepEqual(optionsOf(both, 'session-y').items.map((item) => item.label), ['共享'], '没有自己那节就回退共享项')
+})
+
+test('设置保存不丢「按会话各存一节」的选项（编辑器只改别的字段）', async () => {
+  const plugin = await loadPlugin()
+  const { editorRowOf, validateCustomRows } = plugin.__internals
+  const button = {
+    label: '继续', text: '', mode: 'send', kind: 'menu', side: 'right', style: 'secondary',
+    sessions: {
+      'session-a': { items: [{ label: 'A', text: 'a', mode: 'send' }], at: '2026-11-23T00:00:00.000Z' },
+      'session-b': { items: [{ label: 'B', text: 'b', mode: 'send' }], at: '2026-11-23T01:00:00.000Z' },
+    },
+  }
+  const row = editorRowOf(button)
+  const parsed = validateCustomRows([row])
+  assert.equal(parsed.ok, true)
+  const saved = parsed.buttons[0]
+  assert.deepEqual(Object.keys(saved.sessions).sort(), ['session-a', 'session-b'], '两节都要带回去')
+  assert.equal(saved.sessions['session-b'].items[0].label, 'B')
+  assert.equal(saved.sessions['session-b'].at, '2026-11-23T01:00:00.000Z', '写入时间不丢')
+})
+
+test('菜单悬停提示：默认显示；设置里关掉后不再显示', async () => {
+  const plugin = await loadPlugin()
+  const ctx = makeCtx()
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: true,
+      buttons: [{
+        label: '继续', text: '', mode: 'send', kind: 'menu', side: 'right',
+        session: 'session-test',
+        items: [{ label: '发版', text: '发吧' }],
+      }],
+      hidden: ['continue'],
+      presets: {},
+    }),
+  })
+  const hover = (mounted) => findByClass(mounted.tree, 'dsh-custom-menu').props.onMouseEnter({
+    currentTarget: { getBoundingClientRect: () => ({ left: 500, top: 600, width: 80, height: 28 }) },
+  })
+  try {
+    plugin.apply(ctx)
+    await tick()
+    const mounted = mountDock(ctx)
+    hover(mounted)
+    await waitMenuOpen()
+    assert.ok(findByClass(mounted.tree, 'dsh-menu-tip'), '默认应当显示悬停提示')
+    // 点提示上的 × 关闭（等价于设置里取消勾选）
+    findByClass(mounted.tree, 'dsh-menu-tip-close').props.onClick()
+    hover(mounted)
+    await waitMenuOpen()
+    assert.equal(findByClass(mounted.tree, 'dsh-menu-tip'), null, '关掉后不再显示')
   } finally {
     globalThis.fetch = prevFetch
   }

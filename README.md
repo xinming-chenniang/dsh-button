@@ -27,13 +27,13 @@
 dsh plugin --profile <你的profile> add dsh-button
 ```
 
-从 GitHub 装也可以（钉 `v1.3.3`）：
+从 GitHub 装也可以（钉 `v1.4.0`）：
 
 ```powershell
-dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.3.3
+dsh plugin --profile <你的profile> add github:xinming-chenniang/dsh-button#v1.4.0
 ```
 
-`#v1.3.3` 不要省：不钉版本会取仓库的 `main`，可能和已发布版本有差异。
+`#v1.4.0` 不要省：不钉版本会取仓库的 `main`，可能和已发布版本有差异。
 
 `v1.3.1` / `v1.3.2` 只有 npm 包、没有对应的 tag 与 Release；要稳定版本走上面那条 npm 命令即可。
 
@@ -301,6 +301,10 @@ C:\Users\<你>\.dsh\dsh-button\buttons.json
 
 ### 从旧版本升级
 
+从 **1.3.x** 升级：配置零改动；「继续」多出一个菜单（点击行为不变）。旧版写下的菜单选项
+（一条按钮只有一批 `items` + 一个 `session`）读入时自动折算成按会话各存一节，不用手改。
+**安装 1.4.0 后要重启 DSH**（宿主半部改了），之后多个会话各写各的选项、互不覆盖。
+
 从 **1.3.0** 升级：配置零改动。`style` / `side` / `source` 缺省时按 `mode` 派生或取 `static`，外观、位置与行为都和 1.3 一模一样。
 
 从 **2026-11-10 未发布版**升级：原来的引用开关（`quote: true` 或 `mode: "quote"`）在打开编辑器时自动折算成文字里的 `{{引用…}}`，提示文字接在引用块后面，不用手改；保存后不再写引用字段。
@@ -352,7 +356,7 @@ npm test
 
 ## 变更
 
-看 [CHANGELOG.md](CHANGELOG.md)。npm `latest` 与 GitHub Release 都是 **1.3.3**。
+看 [CHANGELOG.md](CHANGELOG.md)。npm `latest` 与 GitHub Release 都是 **1.4.0**。
 
 问题反馈：[GitHub Issues](https://github.com/xinming-chenniang/dsh-button/issues)。MIT License。
 

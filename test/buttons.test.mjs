@@ -64,9 +64,10 @@ function fakeRes() {
   }
 }
 
-/** 起插件，返回自定义按钮那条路由的 handler。 */
-function buttonsHandler() {
+/** 起插件，返回自定义按钮那条路由的 handler。`reject` 模拟宿主 `ctx.connection.requestRejection` 的判定。 */
+function buttonsHandler({ reject = undefined } = {}) {
   const routes = new Map()
+  const seen = []
   const ctx = {
     effect: (fn) => {
       fn()
@@ -78,11 +79,19 @@ function buttonsHandler() {
         return () => {}
       },
     },
+    // 真宿主由 `connection` 服务提供：Host/Origin 栅栏 + 浏览器登录凭证（lib/index.js 的 inject）。
+    connection: {
+      requestRejection: (req) => {
+        seen.push(req)
+        return reject
+      },
+    },
   }
   apply(ctx)
   const captured = routes.get(ROUTE)
   assert.ok(captured, `应当注册 ${ROUTE}`)
   assert.equal(captured.kind, 'exact')
+  captured.handler.seen = seen
   return captured.handler
 }
 
@@ -357,6 +366,29 @@ test('POST 路由：非法配置 → 400，且不覆盖旧文件（含非法 hid
 
     assert.deepEqual(loadConfig(file).buttons, [{ label: '旧', text: '旧', mode: 'send', source: 'static', style: 'secondary', side: 'right' }])
   })
+})
+
+test('路由先过 DSH 访问检查：宿主判 401 / 403 时按它的状态码拒绝（没有它，网页也能调这条路由）', async () => {
+  const forbidden = buttonsHandler({ reject: 403 })
+  const res403 = fakeRes()
+  await forbidden(fakeReq({ method: 'GET' }), res403)
+  assert.equal(res403.out.status, 403)
+  assert.equal(res403.out.payload.ok, false)
+  assert.equal(res403.out.payload.code, 'forbidden')
+  assert.equal(forbidden.seen.length, 1, '每个请求都要问一次宿主，不能缓存判定')
+
+  const unauthenticated = buttonsHandler({ reject: 401 })
+  const res401 = fakeRes()
+  await unauthenticated(fakeReq({ method: 'POST', body: [{ label: 'a', text: 'b' }] }), res401)
+  assert.equal(res401.out.status, 401)
+  assert.equal(res401.out.payload.code, 'unauthorized')
+
+  // 放行（undefined）后仍走 loopback / 同源 / 方法三道
+  const allowed = buttonsHandler()
+  const ok = fakeRes()
+  await allowed(fakeReq({ method: 'GET' }), ok)
+  assert.equal(ok.out.status, 200)
+  assert.equal(ok.out.payload.ok, true)
 })
 
 test('路由的安全边界：非 loopback 403 / 跨源 403 / 其它方法 405', async () => {

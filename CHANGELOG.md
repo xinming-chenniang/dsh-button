@@ -3,6 +3,24 @@
 > 按版本记录"改了什么、为什么、怎么验证的"。更早的逐版记录在 README 顶部；这里从对外发布版本开始。
 
 
+## 1.4.1 — 2026-11-24：宿主路由补上 DSH 访问检查（安全修复）
+
+> 来源：市场维护者 fkysly 在 PR #18241 合并说明里指出 —— 条目描述被追加了一句「它的 HTTP 路由没有 DSH 的
+> 访问检查（没有 `ctx.connection.requestRejection`），浏览器里打开的网页可以调它们」；他要求的动作是**把这个检查加上**，
+> 再开 PR 撤掉那句话。这一版就是那个检查。
+
+- **fix（宿主半部 `lib/index.js`）**：`/api/dsh-button/buttons` 的准入先问宿主 `ctx.connection.requestRejection`
+  —— Host/Origin 栅栏 + 浏览器登录凭证，这个进程里「谁在调」的权威判断；宿主判 401 / 403 就原样回给调用方
+  （`code: unauthorized` / `forbidden`），不进配置读写。`inject` 从 `['webServer']` 变为 `['webServer', 'connection']`。
+- **保留**：loopback / 方法 / 同源三道照旧，作为纵深防御 —— loopback 挡经由网卡暴露进来的调用，
+  同源挡 Origin 头对不上的页面请求。走 `requestRejection` 之后它们多半用不上，但删掉只会少一层。
+- **test（`test/buttons.test.mjs`）**：新增 1 例 3 断言（403 / 401 / 放行后仍 200），并断言**每个请求都问一次**宿主、不缓存判定。`npm test` **141/141**。
+- **反向验证**（不是"没报错就算过"）：把 `if (rejection !== undefined)` 改成恒假 →
+  `node --test --test-name-pattern "DSH 访问检查" test/buttons.test.mjs` 报 `actual: 200, expected: 403`（fail 1）；改回 → pass 1。
+- **兼容**：`connection` 在 `engines.dsh >= 0.2.0-rc.2` 全线上都有（本机 `0.2.2-rc.5` 的 asar 里 `requestRejection` 存在），不抬最低版本。
+- **宿主半部改动 → 重启 DSH 生效**；改完还没在真机上点过（重启会打断当前会话，留给下次重启后验一次 GET）。
+
+
 ## 1.4.0 — 2026-11-23：菜单按钮（档 6）+ 按会话存储
 
 > 需求（用户）：「每次会话结束，AI 给的几个方案做在一个按钮里，鼠标上去就上拉显示所有选项，选一个发出去」。

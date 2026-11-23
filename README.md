@@ -320,6 +320,7 @@ C:\Users\<你>\.dsh\dsh-button\buttons.json
 ## 限制
 
 - 只处理文字：不执行命令、不读文件、不改 git，也不碰凭据。
+- 宿主路由 `/api/dsh-button/buttons` 先过 DSH 自己的访问检查（`ctx.connection.requestRejection`：Host/Origin 栅栏 + 浏览器登录凭证），再叠 loopback 与同源两道：浏览器里打开的网页即使能连到 `127.0.0.1`，也调不动它。
 - 来源（上一条 / 草稿 / 选区）只读不写：读不到内容时按钮不动作，提示「没有可用的内容」，不把空消息塞进会话。
 - 来源读取依赖宿主公开面（`eventSource` / `draftSnapshot` / `caretSpan`）；宿主太旧、这些面缺失时同样按「没有可用的内容」降级，不会报错。
 - 「上一条我发的」只取纯文本；附件、图片、引用不会随按钮复制。
@@ -330,13 +331,13 @@ C:\Users\<你>\.dsh\dsh-button\buttons.json
 - 控制行用的是公开插槽，最稳；卡片下方/底部依赖宿主 DOM，DSH 改结构后可能要重新适配。
 - 动作条每侧只显示 6 条，「⋯」入口挂在左侧末尾；右侧溢出时也只能从这里打开全部动作。
 - 面板位置、按钮大小、模型开关存在 localStorage，不跨浏览器/设备同步，也不进配置文件。
-- 当前在 DSH `0.2.2-rc.1` 上测过。`package.json` 声明 `engines.dsh >= 0.2.0-rc.2`；更旧的宿主会缺填入 API，按上面的方式降级。
+- 当前在 DSH `0.2.2-rc.5` 上测过。`package.json` 声明 `engines.dsh >= 0.2.0-rc.2`；更旧的宿主会缺填入 API，按上面的方式降级。
 
 ## 开发
 
 ```powershell
 npm test
-# 105/105
+# 141/141
 ```
 
 主要文件：
@@ -356,7 +357,7 @@ npm test
 
 ## 变更
 
-看 [CHANGELOG.md](CHANGELOG.md)。npm `latest` 与 GitHub Release 都是 **1.4.0**。
+看 [CHANGELOG.md](CHANGELOG.md)。已发布的是 **1.4.0**（npm `latest` 与 GitHub Release）；`main` 上的 **1.4.1** 修的是宿主路由的访问检查，待发布。
 
 问题反馈：[GitHub Issues](https://github.com/xinming-chenniang/dsh-button/issues)。MIT License。
 

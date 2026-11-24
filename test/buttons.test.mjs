@@ -368,6 +368,19 @@ test('POST 路由：非法配置 → 400，且不覆盖旧文件（含非法 hid
   })
 })
 
+test('宿主半部声明 connection：访问检查不是可选项，且先于 loopback 判定', async () => {
+  const mod = await import('../lib/index.js')
+  assert.ok(mod.inject.includes('webServer'))
+  assert.ok(mod.inject.includes('connection'), 'inject 缺 connection，cordis 就不会在 apply 前等这个服务，检查会静默失效')
+
+  // 顺序：宿主说 401 时，即便来源是外部地址也先按 401 回（fence 在最前）
+  const handler = buttonsHandler({ reject: 401 })
+  const res = fakeRes()
+  await handler(fakeReq({ method: 'GET', addr: '192.168.1.9' }), res)
+  assert.equal(res.out.status, 401)
+  assert.equal(res.out.payload.code, 'unauthorized')
+})
+
 test('路由先过 DSH 访问检查：宿主判 401 / 403 时按它的状态码拒绝（没有它，网页也能调这条路由）', async () => {
   const forbidden = buttonsHandler({ reject: 403 })
   const res403 = fakeRes()
